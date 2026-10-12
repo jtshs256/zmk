@@ -476,6 +476,20 @@ config TRACKPAD_SPEEDMULTIPLIER_VERTICAL
 #Display/LED Options
 endmenu
 
+config ZMK_UCONSOLE_HID_SLEEP
+    bool "uConsole host sleep control via HID Kana indicator"
+    default n
+    depends on ZMK_BACKLIGHT
+    help
+      Enable uConsole host-controlled keyboard sleep/lock using
+      the HID Kana LED indicator bit.
+      Kana ON disables the trackpad, suspends the keyboard
+      backlight, and activates the LOCK layer.
+      Kana OFF deactivates the LOCK layer, resumes the keyboard
+      backlight, and enables the trackpad.
+      This intentionally repurposes the HID Kana indicator as
+      a private host-to-keyboard control signal.
+
 config ZMK_JOYSTICK
     bool "Joystick HID report (USB only)"
     depends on ZMK_USB
