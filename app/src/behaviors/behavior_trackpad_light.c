@@ -11,6 +11,9 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 #include <zmk/behavior.h>
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+#include <zmk/backlight.h>
+#endif
 #include <zmk/trackpad.h>
 #include <dt-bindings/zmk/trackpad.h>
 
@@ -36,18 +39,21 @@ static int on_trackpad_light_pressed(struct zmk_behavior_binding *binding,
         zmk_trackpad_light_set_enabled(!zmk_trackpad_light_enabled());
         break;
     case TPL_CYCLE:
-#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_CYCLE)
-    {
-        uint8_t brightness = zmk_trackpad_light_get_brightness();
-        brightness = brightness >= 100
-                         ? 0
-                         : MIN(brightness + CONFIG_ZMK_TRACKPAD_LIGHT_BRT_STEP, 100);
-        zmk_trackpad_light_set_brightness(brightness);
-        break;
-    }
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    zmk_backlight_set_brt(zmk_backlight_calc_brt_cycle());
+    break;
+#elif IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_CYCLE)
+{
+    uint8_t brightness = zmk_trackpad_light_get_brightness();
+    brightness = brightness >= 100
+                     ? 0
+                     : MIN(brightness + CONFIG_ZMK_TRACKPAD_LIGHT_BRT_STEP, 100);
+    zmk_trackpad_light_set_brightness(brightness);
+    break;
+}
 #else
-        LOG_ERR("TPL_CYCLE requires CONFIG_ZMK_TRACKPAD_LIGHT_CYCLE");
-        return -ENOTSUP;
+    LOG_ERR("TPL_CYCLE requires CONFIG_ZMK_TRACKPAD_LIGHT_CYCLE");
+    return -ENOTSUP;
 #endif
     case TPL_SUSPEND:
         zmk_trackpad_light_set_suspended(true);
