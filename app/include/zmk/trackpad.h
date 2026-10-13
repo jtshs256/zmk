@@ -7,6 +7,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 /**
  * Shared state between keymap behaviors (set from key events) and the trackpad
@@ -31,9 +32,12 @@ void zmk_trackpad_scroll_mark_used(void);
  */
 void zmk_trackpad_scroll_light_update(bool scrolling);
 
-/** The user's on/off choice for the trackpad light, saved. */
+/** True when the user's saved trackpad light brightness is nonzero. */
 bool zmk_trackpad_light_enabled(void);
 void zmk_trackpad_light_set_enabled(bool on);
+/** Get or set the user's saved trackpad light brightness, from 0 to 100. */
+uint8_t zmk_trackpad_light_get_brightness(void);
+void zmk_trackpad_light_set_brightness(uint8_t brightness);
 
 /** Holds the light off while true, without changing the saved choice. */
 void zmk_trackpad_light_set_suspended(bool suspended);
