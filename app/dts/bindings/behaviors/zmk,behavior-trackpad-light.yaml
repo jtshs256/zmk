@@ -3,9 +3,10 @@
 
 description: |
   Control the trackpad light. The parameter is TPL_OFF, TPL_ON or TPL_TOG
-  (saved across power cycles), or TPL_SUSPEND and TPL_RESUME, which hold it
-  off and let it go again without changing the saved choice (for a lock).
-  See dt-bindings/zmk/trackpad.h.
+  (saved across power cycles), TPL_CYCLE (when
+  CONFIG_ZMK_TRACKPAD_LIGHT_CYCLE is enabled), or TPL_SUSPEND and TPL_RESUME,
+  which hold it off and let it go again without changing the saved choice (for
+  a lock). See dt-bindings/zmk/trackpad.h.
 
 compatible: "zmk,behavior-trackpad-light"
 
