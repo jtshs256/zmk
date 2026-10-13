@@ -25,12 +25,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // scroll mode as a side effect. fix9900 switched the CapsLock indicator off,
 // which left the pin undriven.
 //
-// This drives the same pin the same way, but from the real scroll state: 100%
-// while the trackpad is scrolling, 0% otherwise. On top of that the light
-// can be switched off from the keymap (zmk,behavior-trackpad-light, saved),
-// and the keyboard lock holds it off while locked. Whether 100% means lit or
-// dark depends on how the board wires the light, so
-// CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT swaps the two levels.
+// This drives the same pin from the real trackpad state. On top of that the
+// light can be switched off from the keymap (zmk,behavior-trackpad-light,
+// saved). While the keyboard lock suspends the trackpad light, the LED uses a
+// breathing effect. Resume stops the effect and restores the user's saved
+// on/off choice. Whether 100% means lit or dark depends on how the board wires
+// the light, so CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT swaps the two levels.
 //
 // It cannot be combined with CONFIG_ZMK_INDICATOR_CAPSLOCK, which polls and
 // would overwrite the pin every 50 ms.
@@ -41,21 +41,75 @@ BUILD_ASSERT(DT_HAS_CHOSEN(zmk_indicator_capslock),
 
 static const struct device *const light_dev = DEVICE_DT_GET(DT_CHOSEN(zmk_indicator_capslock));
 
-// The light is lit only when all three allow it: the user has it switched
-// on (saved), the keyboard is not locked, and the trackpad is not scrolling.
 #define LEVEL_LIT (IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT) ? 100 : 0)
 #define LEVEL_DARK (IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT) ? 0 : 100)
+
+// Optional breathing effect while suspended/locked. Enable with:
+// CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING=y
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
+// One full dark -> light -> dark cycle is approximately 2.5 seconds.
+#define BREATHE_STEP 2
+#define BREATHE_INTERVAL_MS 25
+#endif
 
 static bool light_enabled = true;
 static bool light_suspended;
 static bool light_scrolling;
+
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
+static struct k_work_delayable breathe_work;
+static int breathe_brightness;
+static int breathe_direction = 1;
+
+// Convert a logical brightness where 0 is dark and 100 is fully lit into the
+// physical level expected by the board wiring.
+static int light_level_from_brightness(int brightness) {
+    return IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT) ? 100 - brightness : brightness;
+}
+
+static void breathe_work_handler(struct k_work *work) {
+    if (!light_suspended) {
+        return;
+    }
+
+    breathe_brightness += breathe_direction * BREATHE_STEP;
+
+    if (breathe_brightness >= 100) {
+        breathe_brightness = 100;
+        breathe_direction = -1;
+    } else if (breathe_brightness <= 0) {
+        breathe_brightness = 0;
+        breathe_direction = 1;
+    }
+
+    if (device_is_ready(light_dev)) {
+        int rc =
+            led_set_brightness(light_dev, 0, light_level_from_brightness(breathe_brightness));
+        if (rc != 0) {
+            LOG_ERR("Failed to set the trackpad breathing light: %d", rc);
+        }
+    }
+
+    k_work_reschedule(&breathe_work, K_MSEC(BREATHE_INTERVAL_MS));
+}
+#endif
 
 static void light_refresh(void) {
     if (!device_is_ready(light_dev)) {
         return;
     }
 
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
+    // While suspended, breathe_work owns the LED. Scroll or saved-state
+    // updates must not overwrite the current breathing brightness.
+    if (light_suspended) {
+        return;
+    }
+    const bool lit = light_enabled && !light_scrolling;
+#else
+    // Original behavior: suspension holds the light dark.
     const bool lit = light_enabled && !light_suspended && !light_scrolling;
+#endif
     int rc = led_set_brightness(light_dev, 0, lit ? LEVEL_LIT : LEVEL_DARK);
     if (rc != 0) {
         LOG_ERR("Failed to set the trackpad light: %d", rc);
@@ -108,11 +162,42 @@ void zmk_trackpad_light_set_enabled(bool on) {
 }
 
 void zmk_trackpad_light_set_suspended(bool suspended) {
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
+    // Avoid restarting the breathing animation if the state did not change.
+    if (light_suspended == suspended) {
+        return;
+    }
+
+    light_suspended = suspended;
+
+    if (suspended) {
+        // Begin at fully dark, then fade toward fully lit.
+        breathe_brightness = 0;
+        breathe_direction = 1;
+
+        if (device_is_ready(light_dev)) {
+            int rc = led_set_brightness(light_dev, 0, light_level_from_brightness(0));
+            if (rc != 0) {
+                LOG_ERR("Failed to start the trackpad breathing light: %d", rc);
+            }
+        }
+
+        k_work_reschedule(&breathe_work, K_MSEC(BREATHE_INTERVAL_MS));
+    } else {
+        k_work_cancel_delayable(&breathe_work);
+        light_refresh();
+    }
+#else
     light_suspended = suspended;
     light_refresh();
+#endif
 }
 
 static int zmk_trackpad_scroll_light_init(void) {
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
+    k_work_init_delayable(&breathe_work, breathe_work_handler);
+#endif
+
 #if IS_ENABLED(CONFIG_SETTINGS)
     settings_subsys_init();
     int rc = settings_load_subtree_direct("trackpad", light_settings_load_cb, NULL);
