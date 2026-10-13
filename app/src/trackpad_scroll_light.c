@@ -12,6 +12,9 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/settings/settings.h>
 
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+#include <zmk/backlight.h>
+#endif
 #include <zmk/trackpad.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -55,6 +58,13 @@ static const struct device *const light_dev = DEVICE_DT_GET(DT_CHOSEN(zmk_indica
 static uint8_t light_brightness = 100;
 static bool light_suspended;
 static bool light_scrolling;
+static uint8_t light_get_brightness(void) {
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    return zmk_backlight_get_brt();
+#else
+    return light_brightness;
+#endif
+}
 
 #define LIGHT_SETTINGS_VERSION 1
 
@@ -118,10 +128,10 @@ static void light_refresh(void) {
     if (light_suspended) {
         return;
     }
-    const uint8_t brightness = !light_scrolling ? light_brightness : 0;
+    const uint8_t brightness = !light_scrolling ? light_get_brightness() : 0;
 #else
     // Original behavior: suspension holds the light dark.
-    const uint8_t brightness = (!light_suspended && !light_scrolling) ? light_brightness : 0;
+    const uint8_t brightness = (!light_suspended && !light_scrolling) ? light_get_brightness() : 0;
 #endif
     const uint8_t level = brightness == 0
                               ? LEVEL_DARK
@@ -177,6 +187,12 @@ static struct k_work_delayable light_save_work;
 void zmk_trackpad_scroll_light_update(bool scrolling) {
     light_scrolling = scrolling;
     light_refresh();
+}
+
+void zmk_trackpad_light_backlight_sync(void) {
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    light_refresh();
+#endif
 }
 
 bool zmk_trackpad_light_enabled(void) { return light_brightness > 0; }
