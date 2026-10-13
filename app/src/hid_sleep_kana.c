@@ -81,6 +81,7 @@ static void uconsole_sleep(void)
      * Stop trackpad processing first.
      */
     zmk_trackpad_set_enabled(false);
+    zmk_trackpad_light_set_suspended(true);
 
     /*
      * Suspend instead of turning the backlight off.
@@ -138,6 +139,7 @@ static void uconsole_wake(void)
     /*
      * Finally restore trackpad processing.
      */
+    zmk_trackpad_light_set_suspended(false);
     zmk_trackpad_set_enabled(true);
 }
 
