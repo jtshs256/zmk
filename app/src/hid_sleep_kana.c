@@ -65,6 +65,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  */
 #define UCONSOLE_LOCK_LAYER 5
 
+static bool host_locked;
+bool zmk_uconsole_host_locked(void)
+{
+    return host_locked;
+}
+
 /*
  * Enter keyboard sleep.
  *
@@ -161,25 +167,11 @@ static int uconsole_hid_sleep_listener(const zmk_event_t *eh)
     const bool kana =
         (ev->indicators & UCONSOLE_HID_INDICATOR_KANA) != 0;
 
-    /*
-     * Layer 5 is the source of truth.
-     *
-     * Do not maintain a separate "uconsole_sleeping" bool,
-     * because LOCK can also be changed independently by Fn+Esc.
-     */
-    const bool locked =
-        zmk_keymap_layer_active(UCONSOLE_LOCK_LAYER);
-
-    /*
-     * Host requested state is already satisfied.
-     *
-     * This also prevents repeated HID indicator events from
-     * repeatedly suspending/resuming the backlight.
-     */
-    if (kana == locked) {
+    if (kana == host_locked) {
         return ZMK_EV_EVENT_BUBBLE;
     }
-
+    host_locked = kana;
+    
     if (kana) {
         uconsole_sleep();
     } else {
