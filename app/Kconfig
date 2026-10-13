@@ -476,7 +476,7 @@ config TRACKPAD_SPEEDMULTIPLIER_VERTICAL
 #Display/LED Options
 endmenu
 
-config ZMK_UCONSOLE_HID_SLEEP
+config ZMK_HID_SLEEP_KANA
     bool "uConsole host sleep control via HID Kana indicator"
     default n
     depends on ZMK_BACKLIGHT
