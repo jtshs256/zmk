@@ -42,6 +42,9 @@ void zmk_trackpad_light_set_brightness(uint8_t brightness);
 /** Holds the light off while true, without changing the saved choice. */
 void zmk_trackpad_light_set_suspended(bool suspended);
 
+/** Sync backlight level with keyboard. */
+void zmk_trackpad_light_backlight_sync(void);
+
 /** False while the trackpad is switched off by the trackpad-enable behavior. */
 bool zmk_trackpad_enabled(void);
 void zmk_trackpad_set_enabled(bool enabled);
