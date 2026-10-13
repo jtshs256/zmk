@@ -39,7 +39,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // would overwrite the pin every 50 ms.
 
 BUILD_ASSERT(DT_HAS_CHOSEN(zmk_indicator_capslock),
-             "CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT is enabled but no zmk_indicator_capslock chosen "
+             "CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT is d but no zmk_indicator_capslock chosen "
              "node found");
 
 static const struct device *const light_dev = DEVICE_DT_GET(DT_CHOSEN(zmk_indicator_capslock));
@@ -198,23 +198,49 @@ void zmk_trackpad_light_backlight_sync(void) {
 #endif
 }
 
-bool zmk_trackpad_light_enabled(void) { return light_brightness > 0; }
-
-void zmk_trackpad_light_set_enabled(bool on) {
-    zmk_trackpad_light_set_brightness(on ? 100 : 0);
+bool zmk_trackpad_light_enabled(void) {
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    return zmk_backlight_is_on();
+#else
+    return light_brightness > 0;
+#endif
 }
 
-uint8_t zmk_trackpad_light_get_brightness(void) { return light_brightness; }
+void zmk_trackpad_light_set_enabled(bool on) {
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    if (on) {
+        zmk_backlight_on();
+    } else {
+        zmk_backlight_off();
+    }
+#else
+    zmk_trackpad_light_set_brightness(on ? 100 : 0);
+#endif
+}
+
+uint8_t zmk_trackpad_light_get_brightness(void) {
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    return zmk_backlight_get_brt();
+#else
+    return light_brightness;
+#endif
+}
 
 void zmk_trackpad_light_set_brightness(uint8_t brightness) {
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    zmk_backlight_set_brt(MIN(brightness, 100));
+#else
     brightness = MIN(brightness, 100);
     if (light_brightness == brightness) {
         return;
     }
+
     light_brightness = brightness;
     light_refresh();
+
 #if IS_ENABLED(CONFIG_SETTINGS)
     k_work_reschedule(&light_save_work, K_MSEC(CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE));
+#endif
 #endif
 }
 
