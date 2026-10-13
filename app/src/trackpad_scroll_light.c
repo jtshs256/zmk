@@ -82,6 +82,10 @@ static void breathe_work_handler(struct k_work *work) {
         breathe_direction = 1;
     }
 
+    if (!light_suspended) {
+        return;
+    }
+
     if (device_is_ready(light_dev)) {
         int rc =
             led_set_brightness(light_dev, 0, light_level_from_brightness(breathe_brightness));
@@ -90,7 +94,9 @@ static void breathe_work_handler(struct k_work *work) {
         }
     }
 
-    k_work_reschedule(&breathe_work, K_MSEC(BREATHE_INTERVAL_MS));
+    if (light_suspended) {
+        k_work_reschedule(&breathe_work, K_MSEC(BREATHE_INTERVAL_MS));
+    }
 }
 #endif
 
