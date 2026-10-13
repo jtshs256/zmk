@@ -71,7 +71,7 @@ static int breathe_direction = 1;
 // Convert a logical brightness where 0 is dark and 100 is fully lit into the
 // physical level expected by the board wiring.
 static int light_level_from_brightness(int brightness) {
-    return IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT) ? 100 - brightness : brightness;
+    return IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT) ? brightness : 100 - brightness;
 }
 
 static void breathe_work_handler(struct k_work *work) {
