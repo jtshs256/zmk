@@ -52,7 +52,7 @@ static const struct device *const light_dev = DEVICE_DT_GET(DT_CHOSEN(zmk_indica
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
 // One full dark -> light -> dark cycle is approximately 2.5 seconds.
 #define BREATHE_STEP 2
-#define BREATHE_INTERVAL_MS 50
+#define BREATHE_INTERVAL_MS 35
 #endif
 
 static uint8_t light_brightness = 100;
