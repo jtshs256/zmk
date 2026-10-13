@@ -416,6 +416,20 @@ config ZMK_TRACKPAD_SCROLL_LIGHT_INVERT
       0% while scrolling and 100% otherwise. Use this if the light does the
       opposite of what you want.
 
+config ZMK_TRACKPAD_LIGHT_CYCLE
+    bool "Cycle trackpad light brightness"
+    depends on ZMK_TRACKPAD_SCROLL_LIGHT
+    default n
+    help
+      Enable TPL_CYCLE in the trackpad light behavior. Each press increases
+      brightness by ZMK_TRACKPAD_LIGHT_BRT_STEP, wrapping to off at 100%.
+
+config ZMK_TRACKPAD_LIGHT_BRT_STEP
+    int "Trackpad light brightness step in percent"
+    depends on ZMK_TRACKPAD_LIGHT_CYCLE
+    range 1 100
+    default 20
+
 config ZMK_TRACKPAD_SUSPEND_BREATHING
     bool "Breathing trackpad light while suspended"
     depends on ZMK_TRACKPAD_SCROLL_LIGHT
