@@ -79,7 +79,7 @@ if ((NOT CONFIG_ZMK_SPLIT) OR CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
   target_sources_ifdef(CONFIG_ZMK_INDICATOR_CAPSLOCK app PRIVATE src/indicator_capslock.c)
   target_sources_ifdef(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT app PRIVATE src/trackpad_scroll_light.c)
   target_sources_ifdef(CONFIG_ZMK_HID_INDICATORS app PRIVATE src/hid_indicators.c)
-  target_sources_ifdef(CONFIG_ZMK_UCONSOLE_HID_SLEEP app PRIVATE src/uconsole_hid_sleep.c)
+  target_sources_ifdef(CONFIG_ZMK_UCONSOLE_HID_SLEEP app PRIVATE src/hid_sleep_kana.c)
 
   if (CONFIG_ZMK_BLE)
     target_sources(app PRIVATE src/events/ble_active_profile_changed.c)
