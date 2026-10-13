@@ -52,9 +52,16 @@ static const struct device *const light_dev = DEVICE_DT_GET(DT_CHOSEN(zmk_indica
 #define BREATHE_INTERVAL_MS 25
 #endif
 
-static bool light_enabled = true;
+static uint8_t light_brightness = 100;
 static bool light_suspended;
 static bool light_scrolling;
+
+#define LIGHT_SETTINGS_VERSION 1
+
+struct light_settings {
+    uint8_t version;
+    uint8_t brightness;
+};
 
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
 static struct k_work_delayable breathe_work;
@@ -111,12 +118,17 @@ static void light_refresh(void) {
     if (light_suspended) {
         return;
     }
-    const bool lit = light_enabled && !light_scrolling;
+    const uint8_t brightness = !light_scrolling ? light_brightness : 0;
 #else
     // Original behavior: suspension holds the light dark.
-    const bool lit = light_enabled && !light_suspended && !light_scrolling;
+    const uint8_t brightness = (!light_suspended && !light_scrolling) ? light_brightness : 0;
 #endif
-    int rc = led_set_brightness(light_dev, 0, lit ? LEVEL_LIT : LEVEL_DARK);
+    const uint8_t level = brightness == 0
+                              ? LEVEL_DARK
+                              : (IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT)
+                                     ? brightness
+                                     : 100 - brightness);
+    int rc = led_set_brightness(light_dev, 0, level);
     if (rc != 0) {
         LOG_ERR("Failed to set the trackpad light: %d", rc);
     }
@@ -127,14 +139,24 @@ static int light_settings_load_cb(const char *name, size_t len, settings_read_cb
                                   void *cb_arg, void *param) {
     const char *next;
     if (settings_name_steq(name, "light", &next) && !next) {
-        uint8_t saved;
+        if (len == sizeof(uint8_t)) {
+            // Older firmware stored the on/off state as a single byte.
+            uint8_t saved;
+            int rc = read_cb(cb_arg, &saved, sizeof(saved));
+            if (rc >= 0) {
+                light_brightness = saved ? 100 : 0;
+            }
+            return MIN(rc, 0);
+        }
+
+        struct light_settings saved;
         if (len != sizeof(saved)) {
             return -EINVAL;
         }
 
         int rc = read_cb(cb_arg, &saved, sizeof(saved));
-        if (rc >= 0) {
-            light_enabled = saved != 0;
+        if (rc >= 0 && saved.version == LIGHT_SETTINGS_VERSION) {
+            light_brightness = MIN(saved.brightness, 100);
         }
         return MIN(rc, 0);
     }
@@ -142,7 +164,10 @@ static int light_settings_load_cb(const char *name, size_t len, settings_read_cb
 }
 
 static void light_save_work_handler(struct k_work *work) {
-    uint8_t saved = light_enabled ? 1 : 0;
+    struct light_settings saved = {
+        .version = LIGHT_SETTINGS_VERSION,
+        .brightness = light_brightness,
+    };
     settings_save_one("trackpad/light", &saved, sizeof(saved));
 }
 
@@ -154,13 +179,20 @@ void zmk_trackpad_scroll_light_update(bool scrolling) {
     light_refresh();
 }
 
-bool zmk_trackpad_light_enabled(void) { return light_enabled; }
+bool zmk_trackpad_light_enabled(void) { return light_brightness > 0; }
 
 void zmk_trackpad_light_set_enabled(bool on) {
-    if (light_enabled == on) {
+    zmk_trackpad_light_set_brightness(on ? 100 : 0);
+}
+
+uint8_t zmk_trackpad_light_get_brightness(void) { return light_brightness; }
+
+void zmk_trackpad_light_set_brightness(uint8_t brightness) {
+    brightness = MIN(brightness, 100);
+    if (light_brightness == brightness) {
         return;
     }
-    light_enabled = on;
+    light_brightness = brightness;
     light_refresh();
 #if IS_ENABLED(CONFIG_SETTINGS)
     k_work_reschedule(&light_save_work, K_MSEC(CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE));
