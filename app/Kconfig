@@ -521,6 +521,13 @@ config ZMK_HID_SLEEP_KANA
       This intentionally repurposes the HID Kana indicator as
       a private host-to-keyboard control signal.
 
+config ZMK_UCONSOLE_FORCE_LOCK
+    bool "Prevent local unlock while HID Kana is active"
+    default n
+    help
+      Prevent Fn+Esc from unlocking the keyboard while the host
+      HID Kana indicator is active.
+
 config ZMK_JOYSTICK
     bool "Joystick HID report (USB only)"
     depends on ZMK_USB
