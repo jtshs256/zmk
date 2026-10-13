@@ -15,6 +15,9 @@
 
 #include <zmk/activity.h>
 #include <zmk/backlight.h>
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+#include <zmk/trackpad.h>
+#endif
 #include <zmk/usb.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/activity_state_changed.h>
@@ -58,6 +61,9 @@ static int zmk_backlight_update() {
             return rc;
         }
     }
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    zmk_trackpad_light_backlight_sync();
+#endif
     return 0;
 }
 
