@@ -9,15 +9,16 @@
 #include <zephyr/device.h>
 #include <drivers/behavior.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
 #include <zmk/behavior.h>
 #include <zmk/trackpad.h>
 #include <dt-bindings/zmk/trackpad.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-// The trackpad light from the keymap: on, off or toggle (saved), and suspend
-// and resume for the keyboard lock (not saved). Does nothing in a build
-// without CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT.
+// The trackpad light from the keymap: on, off or toggle (saved), optional
+// brightness cycling, and suspend/resume for the keyboard lock (not saved).
+// Does nothing in a build without CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT.
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
@@ -34,6 +35,20 @@ static int on_trackpad_light_pressed(struct zmk_behavior_binding *binding,
     case TPL_TOG:
         zmk_trackpad_light_set_enabled(!zmk_trackpad_light_enabled());
         break;
+    case TPL_CYCLE:
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_CYCLE)
+    {
+        uint8_t brightness = zmk_trackpad_light_get_brightness();
+        brightness = brightness >= 100
+                         ? 0
+                         : MIN(brightness + CONFIG_ZMK_TRACKPAD_LIGHT_BRT_STEP, 100);
+        zmk_trackpad_light_set_brightness(brightness);
+        break;
+    }
+#else
+        LOG_ERR("TPL_CYCLE requires CONFIG_ZMK_TRACKPAD_LIGHT_CYCLE");
+        return -ENOTSUP;
+#endif
     case TPL_SUSPEND:
         zmk_trackpad_light_set_suspended(true);
         break;
