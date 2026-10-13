@@ -58,6 +58,7 @@ static const struct device *const light_dev = DEVICE_DT_GET(DT_CHOSEN(zmk_indica
 static uint8_t light_brightness = 100;
 static bool light_suspended;
 static bool light_scrolling;
+static bool light_initialized;
 static uint8_t light_get_brightness(void) {
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
     return zmk_backlight_get_brt();
@@ -191,7 +192,9 @@ void zmk_trackpad_scroll_light_update(bool scrolling) {
 
 void zmk_trackpad_light_backlight_sync(void) {
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
-    light_refresh();
+    if (light_initialized) {
+        light_refresh();
+    }
 #endif
 }
 
@@ -260,6 +263,7 @@ static int zmk_trackpad_scroll_light_init(void) {
     }
     k_work_init_delayable(&light_save_work, light_save_work_handler);
 #endif
+    light_initialized = true;
     light_refresh();
     return 0;
 }
