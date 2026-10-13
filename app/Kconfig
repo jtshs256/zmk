@@ -416,6 +416,14 @@ config ZMK_TRACKPAD_SCROLL_LIGHT_INVERT
       0% while scrolling and 100% otherwise. Use this if the light does the
       opposite of what you want.
 
+config ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT
+    bool "Synchronize trackpad light brightness with keyboard backlight"
+    default n
+    depends on ZMK_TRACKPAD_SCROLL_LIGHT
+    depends on ZMK_BACKLIGHT
+    help
+      Use the keyboard backlight brightness for the trackpad light.
+
 config ZMK_TRACKPAD_LIGHT_CYCLE
     bool "Cycle trackpad light brightness"
     depends on ZMK_TRACKPAD_SCROLL_LIGHT
