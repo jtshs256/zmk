@@ -21,13 +21,13 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 // The trackpad light from the keymap: on, off or toggle (saved), optional
 // brightness cycling, and suspend/resume for the keyboard lock (not saved).
-// Does nothing in a build without CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT.
+// Does nothing in a build without any trackpad light feature enabled.
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
 static int on_trackpad_light_pressed(struct zmk_behavior_binding *binding,
                                      struct zmk_behavior_binding_event event) {
-#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT)
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT)
     switch (binding->param1) {
     case TPL_OFF:
         zmk_trackpad_light_set_enabled(false);
@@ -39,10 +39,11 @@ static int on_trackpad_light_pressed(struct zmk_behavior_binding *binding,
         zmk_trackpad_light_set_enabled(!zmk_trackpad_light_enabled());
         break;
     case TPL_CYCLE:
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_CYCLE)
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
     zmk_backlight_set_brt(zmk_backlight_calc_brt_cycle());
     break;
-#elif IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_CYCLE)
+#else
 {
     uint8_t brightness = zmk_trackpad_light_get_brightness();
     brightness = brightness >= 100
@@ -51,6 +52,7 @@ static int on_trackpad_light_pressed(struct zmk_behavior_binding *binding,
     zmk_trackpad_light_set_brightness(brightness);
     break;
 }
+#endif
 #else
     LOG_ERR("TPL_CYCLE requires CONFIG_ZMK_TRACKPAD_LIGHT_CYCLE");
     return -ENOTSUP;
