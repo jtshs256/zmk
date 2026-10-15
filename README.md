@@ -105,7 +105,9 @@ is not for everyday use.
 `CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT` drives the trackpad light pin from scroll
 mode: one level while a scroll-hold key is held or a scroll switch is on, the
 other otherwise. On the V2.1 keyboard the light goes out while scrolling.
-`CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT` swaps the two levels.
+`CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT` swaps the two levels. Trackpad light
+brightness cycling, backlight synchronization, and suspend breathing can also
+be enabled independently of scroll mode.
 
 ### Volume key fix
 
