@@ -58,6 +58,7 @@ static const struct device *const light_dev = DEVICE_DT_GET(DT_CHOSEN(zmk_indica
 
 static uint8_t light_brightness = 100;
 static bool light_suspended;
+static bool light_auto_off;
 static bool light_scrolling;
 static bool light_initialized;
 static uint8_t light_get_brightness(void) {
@@ -87,7 +88,7 @@ static int light_level_from_brightness(int brightness) {
 }
 
 static void breathe_work_handler(struct k_work *work) {
-    if (!light_suspended) {
+    if (!light_suspended || light_auto_off) {
         return;
     }
 
@@ -101,7 +102,7 @@ static void breathe_work_handler(struct k_work *work) {
         breathe_direction = 1;
     }
 
-    if (!light_suspended) {
+    if (!light_suspended || light_auto_off) {
         return;
     }
 
@@ -113,7 +114,7 @@ static void breathe_work_handler(struct k_work *work) {
         }
     }
 
-    if (light_suspended) {
+    if (light_suspended && !light_auto_off) {
         k_work_reschedule(&breathe_work, K_MSEC(BREATHE_INTERVAL_MS));
     }
 }
@@ -125,15 +126,17 @@ static void light_refresh(void) {
     }
 
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
-    // While suspended, breathe_work owns the LED. Scroll or saved-state
-    // updates must not overwrite the current breathing brightness.
-    if (light_suspended) {
+    // While suspended, breathe_work owns the LED unless auto-off requires it
+    // to remain dark.
+    if (light_suspended && !light_auto_off) {
         return;
     }
-    const uint8_t brightness = !light_scrolling ? light_get_brightness() : 0;
+    const uint8_t brightness = (!light_auto_off && !light_scrolling) ? light_get_brightness() : 0;
 #else
     // Original behavior: suspension holds the light dark.
-    const uint8_t brightness = (!light_suspended && !light_scrolling) ? light_get_brightness() : 0;
+    const uint8_t brightness = (!light_suspended && !light_auto_off && !light_scrolling)
+                                   ? light_get_brightness()
+                                   : 0;
 #endif
     const uint8_t level = brightness == 0
                               ? LEVEL_DARK
@@ -275,6 +278,28 @@ void zmk_trackpad_light_set_suspended(bool suspended) {
     light_suspended = suspended;
     light_refresh();
 #endif
+}
+
+void zmk_trackpad_light_set_auto_off(bool auto_off) {
+    if (light_auto_off == auto_off) {
+        return;
+    }
+
+    light_auto_off = auto_off;
+
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
+    if (light_suspended) {
+        if (auto_off) {
+            k_work_cancel_delayable(&breathe_work);
+        } else {
+            breathe_brightness = 0;
+            breathe_direction = 1;
+            k_work_reschedule(&breathe_work, K_MSEC(BREATHE_INTERVAL_MS));
+        }
+    }
+#endif
+
+    light_refresh();
 }
 
 static int zmk_trackpad_scroll_light_init(void) {

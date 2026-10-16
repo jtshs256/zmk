@@ -15,7 +15,7 @@
 
 #include <zmk/activity.h>
 #include <zmk/backlight.h>
-#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT)
 #include <zmk/trackpad.h>
 #endif
 #include <zmk/usb.h>
@@ -49,6 +49,16 @@ static struct backlight_state state = {.brightness = CONFIG_ZMK_BACKLIGHT_BRT_ST
 // The state itself is left alone (and so is never saved as "off"), which is
 // what lets resume bring back exactly what was there before. Not persisted.
 static bool suspended = false;
+
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE) || IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+static bool auto_off_idle;
+#endif
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
+static bool auto_off_usb;
+#endif
+static void backlight_update_trackpad_auto_off(void);
+#endif
 
 static int zmk_backlight_update() {
     uint8_t brt = suspended ? 0 : zmk_backlight_get_brt();
@@ -105,6 +115,10 @@ static int zmk_backlight_init(void) {
 #endif
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
     state.on = zmk_usb_is_powered();
+    auto_off_usb = !state.on;
+#endif
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE) || IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
+    backlight_update_trackpad_auto_off();
 #endif
     return zmk_backlight_update();
 }
@@ -170,7 +184,23 @@ uint8_t zmk_backlight_calc_brt_cycle() {
 }
 
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE) || IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
-static int backlight_auto_state(bool *prev_state, bool new_state) {
+static void backlight_update_trackpad_auto_off(void) {
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT)
+    bool auto_off = false;
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+    auto_off = auto_off || auto_off_idle;
+#endif
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
+    auto_off = auto_off || auto_off_usb;
+#endif
+    zmk_trackpad_light_set_auto_off(auto_off);
+#endif
+}
+
+static int backlight_auto_state(bool *prev_state, bool new_state, bool *auto_off_state) {
+    *auto_off_state = !new_state;
+    backlight_update_trackpad_auto_off();
+
     if (state.on == new_state) {
         return 0;
     }
@@ -184,14 +214,15 @@ static int backlight_event_listener(const zmk_event_t *eh) {
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
     if (as_zmk_activity_state_changed(eh)) {
         static bool prev_state = false;
-        return backlight_auto_state(&prev_state, zmk_activity_get_state() == ZMK_ACTIVITY_ACTIVE);
+        return backlight_auto_state(&prev_state, zmk_activity_get_state() == ZMK_ACTIVITY_ACTIVE,
+                                    &auto_off_idle);
     }
 #endif
 
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
     if (as_zmk_usb_conn_state_changed(eh)) {
         static bool prev_state = false;
-        return backlight_auto_state(&prev_state, zmk_usb_is_powered());
+        return backlight_auto_state(&prev_state, zmk_usb_is_powered(), &auto_off_usb);
     }
 #endif
 

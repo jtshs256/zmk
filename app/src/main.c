@@ -18,6 +18,7 @@ LOG_MODULE_REGISTER(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <drivers/ext_power.h>
 
 #include <zmk/hid.h>
+#include <zmk/activity.h>
 #include <dt-bindings/zmk/mouse.h>
 #include <zmk/hid_indicators.h>
 #include <zmk/indicator_capslock.h>
@@ -111,7 +112,11 @@ int main(void) {
 #endif /* CONFIG_ZMK_DISPLAY */
     struct sensor_value xy_pos;
     while (1) {
-        sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &xy_pos);
+        int sensor_read_rc = sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &xy_pos);
+        if (sensor_read_rc == 0 && zmk_trackpad_enabled() &&
+            (xy_pos.val1 != 0 || xy_pos.val2 != 0)) {
+            zmk_activity_notify();
+        }
         char target_9900[] = "bb9900";
         char target_q10[] = "bbq10";
         char target_q20[] = "bbq20";
