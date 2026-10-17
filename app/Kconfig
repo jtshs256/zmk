@@ -525,11 +525,11 @@ config TRACKPAD_SPEEDMULTIPLIER_VERTICAL
 endmenu
 
 config ZMK_HID_SLEEP_KANA
-    bool "uConsole host sleep control via HID Kana indicator"
+    bool "Host sleep control via HID Kana indicator"
     default n
     depends on ZMK_BACKLIGHT
     help
-      Enable uConsole host-controlled keyboard sleep/lock using
+      Enable host-controlled keyboard sleep/lock using
       the HID Kana LED indicator bit.
       Kana ON disables the trackpad, suspends the keyboard
       backlight, and activates the LOCK layer.
@@ -538,8 +538,9 @@ config ZMK_HID_SLEEP_KANA
       This intentionally repurposes the HID Kana indicator as
       a private host-to-keyboard control signal.
 
-config ZMK_UCONSOLE_FORCE_LOCK
+config ZMK_HOST_FORCE_LOCK
     bool "Prevent local unlock while HID Kana is active"
+    depends on ZMK_HID_SLEEP_KANA
     default n
     help
       Prevent Fn+Esc from unlocking the keyboard while the host

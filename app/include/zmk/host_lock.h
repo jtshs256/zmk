@@ -8,4 +8,4 @@
 
 #include <stdbool.h>
 
-bool zmk_uconsole_host_locked(void);
+bool zmk_host_lock_active(void);

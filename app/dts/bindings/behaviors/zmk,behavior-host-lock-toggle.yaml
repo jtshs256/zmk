@@ -1,0 +1,5 @@
+description: Host Fn+Esc keyboard lock toggle behavior
+
+compatible: "zmk,behavior-host-lock-toggle"
+
+include: zero_param.yaml

@@ -80,7 +80,7 @@ if ((NOT CONFIG_ZMK_SPLIT) OR CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
   target_sources_ifdef(CONFIG_ZMK_TRACKPAD_LIGHT app PRIVATE src/trackpad_light.c)
   target_sources_ifdef(CONFIG_ZMK_HID_INDICATORS app PRIVATE src/hid_indicators.c)
   target_sources_ifdef(CONFIG_ZMK_HID_SLEEP_KANA app PRIVATE src/hid_sleep_kana.c)
-  target_sources(app PRIVATE src/behaviors/behavior_uconsole_lock_toggle.c)
+  target_sources(app PRIVATE src/behaviors/behavior_host_lock_toggle.c)
   target_sources(app PRIVATE src/behaviors/behavior_fn.c)
 
   if (CONFIG_ZMK_BLE)

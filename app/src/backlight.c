@@ -50,12 +50,12 @@ static struct backlight_state state = {.brightness = CONFIG_ZMK_BACKLIGHT_BRT_ST
 // what lets resume bring back exactly what was there before. Not persisted.
 static bool suspended = false;
 
-#define BACKLIGHT_SUSPEND_FADE_DURATION_MS 1000
 #define BACKLIGHT_SUSPEND_FADE_INTERVAL_MS 20
 
 static bool suspend_fade_active;
 static uint8_t suspend_fade_start_brightness;
 static uint8_t suspend_fade_brightness;
+static uint32_t suspend_fade_duration_ms;
 static int64_t suspend_fade_start_time;
 static struct k_work_delayable suspend_fade_work;
 static void backlight_suspend_fade_work_handler(struct k_work *work);
@@ -125,16 +125,16 @@ static void backlight_suspend_fade_work_handler(struct k_work *work) {
     }
 
     int64_t elapsed = k_uptime_get() - suspend_fade_start_time;
-    if (elapsed >= BACKLIGHT_SUSPEND_FADE_DURATION_MS) {
+    if (elapsed >= suspend_fade_duration_ms) {
         suspend_fade_active = false;
         suspended = true;
         zmk_backlight_update();
         return;
     }
 
-    uint32_t remaining = (uint32_t)(BACKLIGHT_SUSPEND_FADE_DURATION_MS - elapsed);
+    uint32_t remaining = (uint32_t)(suspend_fade_duration_ms - elapsed);
     suspend_fade_brightness =
-        (uint8_t)((suspend_fade_start_brightness * remaining) / BACKLIGHT_SUSPEND_FADE_DURATION_MS);
+        (uint8_t)((suspend_fade_start_brightness * remaining) / suspend_fade_duration_ms);
     zmk_backlight_update();
     k_work_reschedule(&suspend_fade_work, K_MSEC(BACKLIGHT_SUSPEND_FADE_INTERVAL_MS));
 }
@@ -332,23 +332,25 @@ int zmk_backlight_suspend() {
     return zmk_backlight_update();
 }
 
-int zmk_backlight_suspend_fade(void) {
-    if (suspended || suspend_fade_active) {
+int zmk_backlight_suspend_fade(uint32_t duration_ms) {
+    if (suspended) {
         return 0;
     }
 
     backlight_auto_off_flash_cancel();
 
     uint8_t brightness = zmk_backlight_get_brt();
-    if (brightness == 0) {
+    if (brightness == 0 || duration_ms == 0) {
         return zmk_backlight_suspend();
     }
 
+    backlight_suspend_fade_cancel();
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
     backlight_idle_fade_cancel();
 #endif
     suspend_fade_start_brightness = brightness;
     suspend_fade_brightness = brightness;
+    suspend_fade_duration_ms = duration_ms;
     suspend_fade_start_time = k_uptime_get();
     suspend_fade_active = true;
     k_work_reschedule(&suspend_fade_work, K_MSEC(BACKLIGHT_SUSPEND_FADE_INTERVAL_MS));

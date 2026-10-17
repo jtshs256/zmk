@@ -61,6 +61,7 @@ static void light_refresh(void);
 static bool light_auto_off_fading;
 static bool light_suspend_after_fade;
 static uint8_t light_auto_off_fade_start_brightness;
+static uint32_t light_fade_duration_ms;
 static int64_t light_auto_off_fade_start_time;
 static struct k_work_delayable light_auto_off_fade_work;
 
@@ -81,7 +82,7 @@ static void light_auto_off_fade_work_handler(struct k_work *work) {
     }
 
     int64_t elapsed = k_uptime_get() - light_auto_off_fade_start_time;
-    if (elapsed >= LIGHT_IDLE_FADE_DURATION_MS) {
+    if (elapsed >= light_fade_duration_ms) {
         bool suspend_after_fade = light_suspend_after_fade;
         light_auto_off_fading = false;
         light_suspend_after_fade = false;
@@ -93,10 +94,10 @@ static void light_auto_off_fade_work_handler(struct k_work *work) {
         return;
     }
 
-    uint32_t remaining = (uint32_t)(LIGHT_IDLE_FADE_DURATION_MS - elapsed);
+    uint32_t remaining = (uint32_t)(light_fade_duration_ms - elapsed);
     uint8_t brightness =
         (uint8_t)((light_auto_off_fade_start_brightness * remaining) /
-                  LIGHT_IDLE_FADE_DURATION_MS);
+                  light_fade_duration_ms);
     if (device_is_ready(light_dev)) {
         int rc = led_set_brightness(light_dev, 0, light_level_from_brightness(brightness));
         if (rc != 0) {
@@ -118,13 +119,13 @@ static void light_auto_off_fade_cancel(void) {
 
 static uint8_t light_auto_off_fade_current_brightness(void) {
     int64_t elapsed = k_uptime_get() - light_auto_off_fade_start_time;
-    if (elapsed >= LIGHT_IDLE_FADE_DURATION_MS) {
+    if (elapsed >= light_fade_duration_ms) {
         return 0;
     }
 
-    uint32_t remaining = (uint32_t)(LIGHT_IDLE_FADE_DURATION_MS - elapsed);
+    uint32_t remaining = (uint32_t)(light_fade_duration_ms - elapsed);
     return (uint8_t)((light_auto_off_fade_start_brightness * remaining) /
-                     LIGHT_IDLE_FADE_DURATION_MS);
+                     light_fade_duration_ms);
 }
 
 // Optional breathing effect while suspended/locked. Enable with:
@@ -371,7 +372,7 @@ void zmk_trackpad_light_set_suspended(bool suspended) {
 #endif
 }
 
-void zmk_trackpad_light_set_suspended_fade(bool suspended) {
+void zmk_trackpad_light_set_suspended_fade(bool suspended, uint32_t duration_ms) {
     if (!suspended) {
         zmk_trackpad_light_set_suspended(false);
         return;
@@ -389,12 +390,13 @@ void zmk_trackpad_light_set_suspended_fade(bool suspended) {
     }
 
     light_auto_off_fade_cancel();
-    if (brightness == 0) {
+    if (brightness == 0 || duration_ms == 0) {
         zmk_trackpad_light_set_suspended(true);
         return;
     }
 
     light_auto_off_fade_start_brightness = brightness;
+    light_fade_duration_ms = duration_ms;
     light_auto_off_fade_start_time = k_uptime_get();
     light_auto_off_fading = true;
     light_suspend_after_fade = true;
@@ -416,6 +418,7 @@ void zmk_trackpad_light_set_auto_off(bool auto_off, bool fade) {
     if (auto_off && fade && !was_auto_off && !light_suspended && !light_scrolling) {
         light_auto_off_fade_start_brightness = light_get_brightness();
         if (light_auto_off_fade_start_brightness > 0) {
+            light_fade_duration_ms = LIGHT_IDLE_FADE_DURATION_MS;
             light_auto_off_fade_start_time = k_uptime_get();
             light_auto_off_fading = true;
             light_suspend_after_fade = false;
