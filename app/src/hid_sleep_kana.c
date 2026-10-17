@@ -68,7 +68,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  *   8 = CONFIG
  */
 static bool host_locked;
-static bool backlight_was_idle_auto_off_before_lock;
+static bool backlight_should_restore_after_lock;
 
 bool zmk_host_lock_active(void)
 {
@@ -87,7 +87,8 @@ static void host_lock_sleep(void)
 
     LOG_INF("Host lock: entering keyboard sleep");
 
-    backlight_was_idle_auto_off_before_lock = zmk_backlight_was_idle_auto_off();
+    backlight_should_restore_after_lock =
+        zmk_backlight_is_on() || zmk_backlight_was_idle_auto_off();
 
     /*
      * Stop trackpad processing first.
@@ -143,11 +144,11 @@ static void host_lock_wake(void)
         LOG_ERR("Host lock: backlight resume failed: %d", ret);
     }
 
-    ret = zmk_backlight_wake_from_idle(backlight_was_idle_auto_off_before_lock);
+    ret = zmk_backlight_restore_after_host_lock(backlight_should_restore_after_lock);
     if (ret < 0) {
-        LOG_ERR("Host lock: timed-out backlight wake failed: %d", ret);
+        LOG_ERR("Host lock: backlight restore failed: %d", ret);
     }
-    backlight_was_idle_auto_off_before_lock = false;
+    backlight_should_restore_after_lock = false;
 
     /*
      * Finally restore trackpad processing.

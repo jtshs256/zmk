@@ -21,8 +21,8 @@ int zmk_backlight_resume();
 void zmk_backlight_skip_fade_on_activity(void);
 /** True when idle auto-off turned off a backlight that was previously on. */
 bool zmk_backlight_was_idle_auto_off(void);
-/** Restore the idle-auto-off state saved before a host lock, if still allowed. */
-int zmk_backlight_wake_from_idle(bool was_idle_auto_off);
+/** Restore backlight illumination saved before a host lock, respecting USB auto-off. */
+int zmk_backlight_restore_after_host_lock(bool should_restore);
 bool zmk_backlight_is_on();
 
 int zmk_backlight_set_brt(uint8_t brightness);

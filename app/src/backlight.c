@@ -523,9 +523,8 @@ bool zmk_backlight_was_idle_auto_off(void) {
 #endif
 }
 
-int zmk_backlight_wake_from_idle(bool was_idle_auto_off) {
-#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
-    if (!was_idle_auto_off) {
+int zmk_backlight_restore_after_host_lock(bool should_restore) {
+    if (!should_restore) {
         return 0;
     }
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
@@ -533,14 +532,15 @@ int zmk_backlight_wake_from_idle(bool was_idle_auto_off) {
         return 0;
     }
 #endif
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
     auto_off_idle = false;
     idle_prev_state = false;
     backlight_idle_fade_cancel();
-    backlight_update_trackpad_auto_off(false);
-    return zmk_backlight_on();
-#else
-    return 0;
 #endif
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE) || IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
+    backlight_update_trackpad_auto_off(false);
+#endif
+    return zmk_backlight_on();
 }
 
 void zmk_backlight_skip_fade_on_activity(void) {
