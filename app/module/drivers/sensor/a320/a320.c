@@ -10,6 +10,7 @@
 #include <zephyr/sys/crc.h>
 #include <zephyr/logging/log.h>
 
+#include <errno.h>
 #include <stdlib.h>
 
 #include "a320.h"
@@ -141,20 +142,34 @@ static int a320_channel_get(const struct device *dev, enum sensor_channel chan,
                             struct sensor_value *val) {
     a320_sync_engine(dev);
 
-    const uint8_t ifmotion = a320_read_reg(dev, Motion);
-    const uint8_t ovflow = a320_read_reg(dev, Motion);
+    const int motion = a320_read_reg(dev, Motion);
+    if (motion < 0) {
+        return -EIO;
+    }
+    const uint8_t ifmotion = motion;
+    const int overflow = a320_read_reg(dev, Motion);
+    if (overflow < 0) {
+        return -EIO;
+    }
+    const uint8_t ovflow = overflow;
     if ((ifmotion & BIT_MOTION_MOT) && !(ovflow & BIT_MOTION_OVF)) {
-        val->val1 = a320_read_reg(dev, Delta_X);
-        val->val2 = a320_read_reg(dev, Delta_Y);
+        const int dx = a320_read_reg(dev, Delta_X);
+        const int dy = a320_read_reg(dev, Delta_Y);
+        if (dx < 0 || dy < 0) {
+            return -EIO;
+        }
+        val->val1 = dx;
+        val->val2 = dy;
         LOG_DBG("you get the x value : %d", val->val1);
         LOG_DBG("you get the y value : %d", val->val2);
-    } else{
+    } else {
         val->val1 = 0;
-        val->val2 = 0;}
+        val->val2 = 0;
+    }
 #if IS_ENABLED(CONFIG_INPUT_A320_DIAG)
     a320_diag_sample(dev, ifmotion, (int8_t)val->val1, (int8_t)val->val2);
 #endif
-    return -1;
+    return 0;
 }
 
 static const struct sensor_driver_api a320_driver_api = {
