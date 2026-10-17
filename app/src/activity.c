@@ -19,6 +19,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/events/sensor_event.h>
 
 #include <zmk/activity.h>
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT)
+#include <zmk/backlight.h>
+#endif
+#include <zmk/trackpad.h>
 
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
 #include <zmk/usb.h>
@@ -63,6 +67,10 @@ int activity_event_listener(const zmk_event_t *eh) {
 
 int zmk_activity_notify(void) {
     activity_last_uptime = k_uptime_get();
+    zmk_trackpad_light_skip_fade_on_activity();
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT)
+    zmk_backlight_skip_fade_on_activity();
+#endif
     return set_state(ZMK_ACTIVITY_ACTIVE);
 }
 

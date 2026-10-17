@@ -66,6 +66,7 @@ static struct k_work_delayable light_fade_work;
 static bool light_output_initialized;
 static bool light_resume_fade_pending;
 static uint8_t light_last_output_brightness;
+static int64_t light_fade_skip_until;
 #endif
 static void light_fade_cancel(void);
 
@@ -237,11 +238,19 @@ static void light_refresh(void) {
                                    : 0;
 #endif
 #if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    int64_t now = k_uptime_get();
+    bool skip_wake_fade = light_fade_skip_until > now;
+    if (light_fade_skip_until != 0 && !skip_wake_fade) {
+        light_fade_skip_until = 0;
+    }
+
     if (light_resume_fade_pending && brightness > 0) {
-        uint8_t start_brightness = light_last_output_brightness;
         light_resume_fade_pending = false;
-        light_fade_start(start_brightness, brightness, ZMK_LED_WAKE_FADE_DURATION_MS, false);
-        return;
+        if (!skip_wake_fade) {
+            uint8_t start_brightness = light_last_output_brightness;
+            light_fade_start(start_brightness, brightness, ZMK_LED_WAKE_FADE_DURATION_MS, false);
+            return;
+        }
     }
 
     if (light_resume_fade_pending && light_get_brightness() == 0) {
@@ -249,8 +258,14 @@ static void light_refresh(void) {
     }
 
     if (light_output_initialized && light_last_output_brightness == 0 && brightness > 0) {
-        light_fade_start(0, brightness, ZMK_LED_WAKE_FADE_DURATION_MS, false);
-        return;
+        if (!skip_wake_fade) {
+            light_fade_start(0, brightness, ZMK_LED_WAKE_FADE_DURATION_MS, false);
+            return;
+        }
+    }
+
+    if (skip_wake_fade && brightness > 0) {
+        light_fade_skip_until = 0;
     }
 #endif
     const uint8_t level = brightness == 0
@@ -364,9 +379,15 @@ void zmk_trackpad_light_set_brightness(uint8_t brightness) {
         return;
     }
 
+    uint8_t current_brightness =
+        light_fade_active ? light_fade_current_brightness() : light_last_output_brightness;
     light_fade_cancel();
     light_brightness = brightness;
-    light_refresh();
+    if (brightness == 0 && current_brightness > 0 && !light_suspended) {
+        light_fade_start(current_brightness, 0, ZMK_LED_TRANSITION_FADE_DURATION_MS, false);
+    } else {
+        light_refresh();
+    }
 
 #if IS_ENABLED(CONFIG_SETTINGS)
     k_work_reschedule(&light_save_work, K_MSEC(CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE));
@@ -385,6 +406,9 @@ void zmk_trackpad_light_set_suspended(bool suspended) {
     }
 
     if (was_suspended == suspended) {
+        if (!suspended) {
+            light_refresh();
+        }
         return;
     }
 
@@ -449,6 +473,18 @@ void zmk_trackpad_light_set_suspended_fade(bool suspended, uint32_t duration_ms)
     }
 
     light_fade_start(brightness, 0, duration_ms, true);
+}
+
+void zmk_trackpad_light_skip_fade_on_activity(void) {
+#if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    if (!light_fade_active || light_suspend_after_fade) {
+        return;
+    }
+
+    light_fade_skip_until = k_uptime_get() + ZMK_LED_FADE_SKIP_WINDOW_MS;
+    light_fade_cancel();
+    light_refresh();
+#endif
 }
 
 void zmk_trackpad_light_set_auto_off(bool auto_off, bool fade) {
