@@ -59,6 +59,7 @@ static void light_refresh(void);
 #define LIGHT_IDLE_FADE_INTERVAL_MS 20
 
 static bool light_auto_off_fading;
+static bool light_suspend_after_fade;
 static uint8_t light_auto_off_fade_start_brightness;
 static int64_t light_auto_off_fade_start_time;
 static struct k_work_delayable light_auto_off_fade_work;
@@ -75,13 +76,20 @@ static void light_auto_off_fade_work_handler(struct k_work *work) {
 
     if (light_suspended) {
         light_auto_off_fading = false;
+        light_suspend_after_fade = false;
         return;
     }
 
     int64_t elapsed = k_uptime_get() - light_auto_off_fade_start_time;
     if (elapsed >= LIGHT_IDLE_FADE_DURATION_MS) {
+        bool suspend_after_fade = light_suspend_after_fade;
         light_auto_off_fading = false;
-        light_refresh();
+        light_suspend_after_fade = false;
+        if (suspend_after_fade) {
+            zmk_trackpad_light_set_suspended(true);
+        } else {
+            light_refresh();
+        }
         return;
     }
 
@@ -100,12 +108,23 @@ static void light_auto_off_fade_work_handler(struct k_work *work) {
 }
 
 static void light_auto_off_fade_cancel(void) {
-    if (!light_auto_off_fading) {
-        return;
+    if (light_auto_off_fading) {
+        light_auto_off_fading = false;
+        k_work_cancel_delayable(&light_auto_off_fade_work);
     }
 
-    light_auto_off_fading = false;
-    k_work_cancel_delayable(&light_auto_off_fade_work);
+    light_suspend_after_fade = false;
+}
+
+static uint8_t light_auto_off_fade_current_brightness(void) {
+    int64_t elapsed = k_uptime_get() - light_auto_off_fade_start_time;
+    if (elapsed >= LIGHT_IDLE_FADE_DURATION_MS) {
+        return 0;
+    }
+
+    uint32_t remaining = (uint32_t)(LIGHT_IDLE_FADE_DURATION_MS - elapsed);
+    return (uint8_t)((light_auto_off_fade_start_brightness * remaining) /
+                     LIGHT_IDLE_FADE_DURATION_MS);
 }
 
 // Optional breathing effect while suspended/locked. Enable with:
@@ -307,6 +326,13 @@ void zmk_trackpad_light_set_brightness(uint8_t brightness) {
 }
 
 void zmk_trackpad_light_set_suspended(bool suspended) {
+    if (!suspended && light_suspend_after_fade) {
+        light_auto_off_fade_cancel();
+        light_refresh();
+    } else if (suspended && !light_suspended) {
+        light_auto_off_fade_cancel();
+    }
+
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
     // Avoid restarting the breathing animation if the state did not change.
     if (light_suspended == suspended) {
@@ -345,9 +371,39 @@ void zmk_trackpad_light_set_suspended(bool suspended) {
 #endif
 }
 
+void zmk_trackpad_light_set_suspended_fade(bool suspended) {
+    if (!suspended) {
+        zmk_trackpad_light_set_suspended(false);
+        return;
+    }
+
+    if (light_suspended) {
+        return;
+    }
+
+    uint8_t brightness = 0;
+    if (light_auto_off_fading) {
+        brightness = light_auto_off_fade_current_brightness();
+    } else if (!light_auto_off && !light_scrolling) {
+        brightness = light_get_brightness();
+    }
+
+    light_auto_off_fade_cancel();
+    if (brightness == 0) {
+        zmk_trackpad_light_set_suspended(true);
+        return;
+    }
+
+    light_auto_off_fade_start_brightness = brightness;
+    light_auto_off_fade_start_time = k_uptime_get();
+    light_auto_off_fading = true;
+    light_suspend_after_fade = true;
+    k_work_reschedule(&light_auto_off_fade_work, K_MSEC(LIGHT_IDLE_FADE_INTERVAL_MS));
+}
+
 void zmk_trackpad_light_set_auto_off(bool auto_off, bool fade) {
     if (light_auto_off == auto_off) {
-        if (auto_off && light_auto_off_fading && !fade) {
+        if (auto_off && light_auto_off_fading && !light_suspend_after_fade && !fade) {
             light_auto_off_fade_cancel();
             light_refresh();
         }
@@ -362,12 +418,13 @@ void zmk_trackpad_light_set_auto_off(bool auto_off, bool fade) {
         if (light_auto_off_fade_start_brightness > 0) {
             light_auto_off_fade_start_time = k_uptime_get();
             light_auto_off_fading = true;
+            light_suspend_after_fade = false;
             k_work_reschedule(&light_auto_off_fade_work, K_MSEC(LIGHT_IDLE_FADE_INTERVAL_MS));
             return;
         }
     }
 
-    if (!auto_off) {
+    if (!auto_off && !light_suspend_after_fade) {
         light_auto_off_fade_cancel();
     }
 

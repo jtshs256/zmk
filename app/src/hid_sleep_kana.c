@@ -22,6 +22,7 @@
 
 #include <zephyr/logging/log.h>
 
+#include <zmk/activity.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/hid_indicators_changed.h>
 
@@ -67,7 +68,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define UCONSOLE_LOCK_LAYER 5
 
 static bool host_locked;
-static bool backlight_was_on_before_lock;
 
 bool zmk_uconsole_host_locked(void)
 {
@@ -90,19 +90,14 @@ static void uconsole_sleep(void)
      * Stop trackpad processing first.
      */
     zmk_trackpad_set_enabled(false);
-    zmk_trackpad_light_set_suspended(true);
-
-    /*
-     * Suspend instead of turning the backlight off.
-     *
-     * This preserves the previous backlight state so RESUME
-     * can restore it later.
-     */
-    ret = zmk_backlight_suspend();
+    /* Fade out, then suspend without changing the saved backlight state. */
+    ret = zmk_backlight_suspend_fade();
 
     if (ret < 0) {
         LOG_ERR("uConsole: backlight suspend failed: %d", ret);
     }
+
+    zmk_trackpad_light_set_suspended_fade(true);
 
     /*
      * Explicitly activate LOCK.
@@ -145,13 +140,10 @@ static void uconsole_wake(void)
         LOG_ERR("uConsole: backlight resume failed: %d", ret);
     }
 
-    /* An idle-sleeping backlight should wake with the keyboard. */
-    if (!backlight_was_on_before_lock) {
-        ret = zmk_backlight_on();
-
-        if (ret < 0) {
-            LOG_ERR("uConsole: backlight wake failed: %d", ret);
-        }
+    /* Treat host unlock as activity so idle auto-off restores the backlight. */
+    ret = zmk_activity_notify();
+    if (ret < 0) {
+        LOG_ERR("uConsole: activity notification failed: %d", ret);
     }
 
     /*
@@ -185,7 +177,6 @@ static int uconsole_hid_sleep_listener(const zmk_event_t *eh)
     host_locked = kana;
 
     if (kana) {
-        backlight_was_on_before_lock = zmk_backlight_is_on();
         uconsole_sleep();
     } else {
         uconsole_wake();

@@ -39,12 +39,12 @@ static int on_lock_kb_pressed(struct zmk_behavior_binding *binding,
     if (!zmk_keymap_layer_active(UCONSOLE_LOCK_LAYER)) {
         zmk_trackpad_set_enabled(false);
 
-        int ret = zmk_backlight_suspend();
+        int ret = zmk_backlight_suspend_fade();
         if (ret < 0) {
             LOG_ERR("uConsole: backlight suspend failed: %d", ret);
         }
 
-        zmk_trackpad_light_set_suspended(true);
+        zmk_trackpad_light_set_suspended_fade(true);
 
         ret = zmk_keymap_layer_activate(UCONSOLE_LOCK_LAYER);
         if (ret < 0) {

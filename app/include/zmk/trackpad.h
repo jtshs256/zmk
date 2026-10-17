@@ -42,10 +42,13 @@ void zmk_trackpad_light_set_brightness(uint8_t brightness);
 /** Holds the light off while true, without changing the saved choice. */
 #if defined(CONFIG_ZMK_TRACKPAD_LIGHT)
 void zmk_trackpad_light_set_suspended(bool suspended);
+/** Fade to dark before suspending; resuming cancels an in-progress fade. */
+void zmk_trackpad_light_set_suspended_fade(bool suspended);
 /** Holds the light off while keyboard backlight auto-off is active. */
 void zmk_trackpad_light_set_auto_off(bool auto_off, bool fade);
 #else
 static inline void zmk_trackpad_light_set_suspended(bool suspended) { (void)suspended; }
+static inline void zmk_trackpad_light_set_suspended_fade(bool suspended) { (void)suspended; }
 static inline void zmk_trackpad_light_set_auto_off(bool auto_off, bool fade) {
     (void)auto_off;
     (void)fade;
