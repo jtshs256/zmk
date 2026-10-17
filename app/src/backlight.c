@@ -327,7 +327,11 @@ static int backlight_event_listener(const zmk_event_t *eh) {
 
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
     if (as_zmk_activity_state_changed(eh)) {
-        bool active = zmk_activity_get_state() == ZMK_ACTIVITY_ACTIVE;
+        // Use the state carried by this event. Trackpad polling can notify
+        // activity repeatedly while older activity events are still waiting
+        // to be handled; reading the global state here can make an IDLE event
+        // look ACTIVE and lose the off/on transitions.
+        bool active = as_zmk_activity_state_changed(eh)->state == ZMK_ACTIVITY_ACTIVE;
         if (!auto_off_idle_enabled) {
             // Keep the trackpad policy in sync while the runtime option is disabled.
             auto_off_idle = false;

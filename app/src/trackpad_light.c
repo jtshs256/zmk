@@ -88,7 +88,7 @@ static int light_level_from_brightness(int brightness) {
 }
 
 static void breathe_work_handler(struct k_work *work) {
-    if (!light_suspended || light_auto_off) {
+    if (!light_suspended) {
         return;
     }
 
@@ -102,7 +102,7 @@ static void breathe_work_handler(struct k_work *work) {
         breathe_direction = 1;
     }
 
-    if (!light_suspended || light_auto_off) {
+    if (!light_suspended) {
         return;
     }
 
@@ -114,7 +114,7 @@ static void breathe_work_handler(struct k_work *work) {
         }
     }
 
-    if (light_suspended && !light_auto_off) {
+    if (light_suspended) {
         k_work_reschedule(&breathe_work, K_MSEC(BREATHE_INTERVAL_MS));
     }
 }
@@ -126,9 +126,9 @@ static void light_refresh(void) {
     }
 
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
-    // While suspended, breathe_work owns the LED unless auto-off requires it
-    // to remain dark.
-    if (light_suspended && !light_auto_off) {
+    // While suspended, breathe_work owns the LED, including when the regular
+    // trackpad light is suppressed by keyboard idle auto-off.
+    if (light_suspended) {
         return;
     }
     const uint8_t brightness = (!light_auto_off && !light_scrolling) ? light_get_brightness() : 0;
@@ -288,14 +288,12 @@ void zmk_trackpad_light_set_auto_off(bool auto_off) {
     light_auto_off = auto_off;
 
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
-    if (light_suspended) {
-        if (auto_off) {
-            k_work_cancel_delayable(&breathe_work);
-        } else {
-            breathe_brightness = 0;
-            breathe_direction = 1;
-            k_work_reschedule(&breathe_work, K_MSEC(BREATHE_INTERVAL_MS));
-        }
+    // Auto-off controls the normal trackpad light. A suspended light uses
+    // the breathing effect instead, so changing auto-off must not stop it.
+    if (light_suspended && !auto_off) {
+        breathe_brightness = 0;
+        breathe_direction = 1;
+        k_work_reschedule(&breathe_work, K_MSEC(BREATHE_INTERVAL_MS));
     }
 #endif
 
