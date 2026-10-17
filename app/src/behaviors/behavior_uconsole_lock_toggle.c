@@ -15,30 +15,24 @@
 #include <zmk/behavior.h>
 #include <zmk/keymap.h>
 #include <zmk/trackpad.h>
+#include <zmk/fn.h>
 #include <zmk/uconsole_state.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #define UCONSOLE_LOCK_LAYER 5
-#define UCONSOLE_SYM_LAYER 1
-#define UCONSOLE_UPPER_LAYER 2
-#define UCONSOLE_UNLOCK_LEFT_LAYER 6
-#define UCONSOLE_UNLOCK_RIGHT_LAYER 7
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
-static bool uconsole_fn_is_down(void) {
-    return zmk_keymap_layer_active(UCONSOLE_SYM_LAYER) ||
-           zmk_keymap_layer_active(UCONSOLE_UPPER_LAYER) ||
-           zmk_keymap_layer_active(UCONSOLE_UNLOCK_LEFT_LAYER) ||
-           zmk_keymap_layer_active(UCONSOLE_UNLOCK_RIGHT_LAYER);
+static bool fn_is_down(void) {
+    return zmk_fn_is_down();
 }
 
 static int on_lock_kb_pressed(struct zmk_behavior_binding *binding,
                               struct zmk_behavior_binding_event event) {
     // This behavior is only bound to Fn-layer Esc positions and LOCK Esc.
     // Checking the momentary layer state prevents Esc alone from unlocking.
-    if (!uconsole_fn_is_down()) {
+    if (!fn_is_down()) {
         return ZMK_BEHAVIOR_OPAQUE;
     }
 

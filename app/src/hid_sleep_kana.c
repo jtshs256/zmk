@@ -62,7 +62,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  *   5 = LOCK
  *   6 = UNLOCK_LEFT
  *   7 = UNLOCK_RIGHT
- *   8 = BOOT
+ *   8 = CONFIG
  */
 #define UCONSOLE_LOCK_LAYER 5
 

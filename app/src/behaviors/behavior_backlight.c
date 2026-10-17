@@ -12,9 +12,12 @@
 
 #include <dt-bindings/zmk/backlight.h>
 #include <zmk/backlight.h>
+#include <zmk/behavior.h>
 #include <zmk/keymap.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+
+#define UCONSOLE_LOCK_LAYER 5
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
@@ -76,6 +79,10 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
     case BL_RESUME_CMD:
         return zmk_backlight_resume();
     case BL_AUTO_OFF_TOG_CMD:
+        if (zmk_keymap_layer_active(UCONSOLE_LOCK_LAYER)) {
+            LOG_DBG("Ignoring backlight auto-off toggle while keyboard locked");
+            return ZMK_BEHAVIOR_OPAQUE;
+        }
         return zmk_backlight_toggle_auto_off_idle();
     default:
         LOG_ERR("Unknown backlight command: %d", binding->param1);

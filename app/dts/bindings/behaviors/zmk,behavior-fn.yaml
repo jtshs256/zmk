@@ -1,0 +1,5 @@
+description: Fn key state and SYM Fn Lock behavior
+
+compatible: "zmk,behavior-fn"
+
+include: one_param.yaml
