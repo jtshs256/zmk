@@ -15,6 +15,7 @@
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
 #include <zmk/backlight.h>
 #endif
+#include <zmk/led_fade.h>
 #include <zmk/trackpad.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -53,39 +54,68 @@ static bool light_initialized;
 static uint8_t light_get_brightness(void);
 static void light_refresh(void);
 
-#define LEVEL_LIT (IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT) ? 100 : 0)
 #define LEVEL_DARK (IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT) ? 0 : 100)
-#define LIGHT_IDLE_FADE_DURATION_MS 1000
-#define LIGHT_IDLE_FADE_INTERVAL_MS 20
-
-static bool light_auto_off_fading;
+static bool light_fade_active;
 static bool light_suspend_after_fade;
-static uint8_t light_auto_off_fade_start_brightness;
+static uint8_t light_fade_start_brightness;
+static uint8_t light_fade_target_brightness;
 static uint32_t light_fade_duration_ms;
-static int64_t light_auto_off_fade_start_time;
-static struct k_work_delayable light_auto_off_fade_work;
+static int64_t light_fade_start_time;
+static struct k_work_delayable light_fade_work;
+#if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+static bool light_output_initialized;
+static bool light_resume_fade_pending;
+static uint8_t light_last_output_brightness;
+#endif
+static void light_fade_cancel(void);
 
 // Convert logical brightness (0 = dark, 100 = lit) to the board's LED level.
 static int light_level_from_brightness(int brightness) {
     return IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT) ? brightness : 100 - brightness;
 }
 
-static void light_auto_off_fade_work_handler(struct k_work *work) {
-    if (!light_auto_off_fading) {
+static uint8_t light_fade_current_brightness(void) {
+    int64_t elapsed = k_uptime_get() - light_fade_start_time;
+    if (elapsed >= light_fade_duration_ms) {
+        return light_fade_target_brightness;
+    }
+
+    int32_t delta = (int32_t)light_fade_target_brightness - light_fade_start_brightness;
+    return (uint8_t)(light_fade_start_brightness +
+                     (delta * elapsed) / light_fade_duration_ms);
+}
+
+static void light_fade_start(uint8_t start_brightness, uint8_t target_brightness,
+                             uint32_t duration_ms, bool suspend_after_fade) {
+    light_fade_cancel();
+    light_fade_start_brightness = start_brightness;
+    light_fade_target_brightness = target_brightness;
+    light_fade_duration_ms = duration_ms;
+    light_fade_start_time = k_uptime_get();
+    light_fade_active = true;
+    light_suspend_after_fade = suspend_after_fade;
+    k_work_reschedule(&light_fade_work, K_MSEC(ZMK_LED_FADE_INTERVAL_MS));
+}
+
+static void light_fade_work_handler(struct k_work *work) {
+    if (!light_fade_active) {
         return;
     }
 
     if (light_suspended) {
-        light_auto_off_fading = false;
+        light_fade_active = false;
         light_suspend_after_fade = false;
         return;
     }
 
-    int64_t elapsed = k_uptime_get() - light_auto_off_fade_start_time;
+    int64_t elapsed = k_uptime_get() - light_fade_start_time;
     if (elapsed >= light_fade_duration_ms) {
         bool suspend_after_fade = light_suspend_after_fade;
-        light_auto_off_fading = false;
+        light_fade_active = false;
         light_suspend_after_fade = false;
+#if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+        light_last_output_brightness = light_fade_target_brightness;
+#endif
         if (suspend_after_fade) {
             zmk_trackpad_light_set_suspended(true);
         } else {
@@ -94,38 +124,28 @@ static void light_auto_off_fade_work_handler(struct k_work *work) {
         return;
     }
 
-    uint32_t remaining = (uint32_t)(light_fade_duration_ms - elapsed);
-    uint8_t brightness =
-        (uint8_t)((light_auto_off_fade_start_brightness * remaining) /
-                  light_fade_duration_ms);
+    uint8_t brightness = light_fade_current_brightness();
     if (device_is_ready(light_dev)) {
         int rc = led_set_brightness(light_dev, 0, light_level_from_brightness(brightness));
         if (rc != 0) {
             LOG_ERR("Failed to fade the trackpad light: %d", rc);
+        } else {
+#if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+            light_last_output_brightness = brightness;
+#endif
         }
     }
 
-    k_work_reschedule(&light_auto_off_fade_work, K_MSEC(LIGHT_IDLE_FADE_INTERVAL_MS));
+    k_work_reschedule(&light_fade_work, K_MSEC(ZMK_LED_FADE_INTERVAL_MS));
 }
 
-static void light_auto_off_fade_cancel(void) {
-    if (light_auto_off_fading) {
-        light_auto_off_fading = false;
-        k_work_cancel_delayable(&light_auto_off_fade_work);
+static void light_fade_cancel(void) {
+    if (light_fade_active) {
+        light_fade_active = false;
+        k_work_cancel_delayable(&light_fade_work);
     }
 
     light_suspend_after_fade = false;
-}
-
-static uint8_t light_auto_off_fade_current_brightness(void) {
-    int64_t elapsed = k_uptime_get() - light_auto_off_fade_start_time;
-    if (elapsed >= light_fade_duration_ms) {
-        return 0;
-    }
-
-    uint32_t remaining = (uint32_t)(light_fade_duration_ms - elapsed);
-    return (uint8_t)((light_auto_off_fade_start_brightness * remaining) /
-                     light_fade_duration_ms);
 }
 
 // Optional breathing effect while suspended/locked. Enable with:
@@ -180,6 +200,11 @@ static void breathe_work_handler(struct k_work *work) {
             led_set_brightness(light_dev, 0, light_level_from_brightness(breathe_brightness));
         if (rc != 0) {
             LOG_ERR("Failed to set the trackpad breathing light: %d", rc);
+        } else {
+#if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+            light_last_output_brightness = breathe_brightness;
+            light_output_initialized = true;
+#endif
         }
     }
 
@@ -194,7 +219,7 @@ static void light_refresh(void) {
         return;
     }
 
-    if (light_auto_off_fading) {
+    if (light_fade_active) {
         return;
     }
 
@@ -211,6 +236,23 @@ static void light_refresh(void) {
                                    ? light_get_brightness()
                                    : 0;
 #endif
+#if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    if (light_resume_fade_pending && brightness > 0) {
+        uint8_t start_brightness = light_last_output_brightness;
+        light_resume_fade_pending = false;
+        light_fade_start(start_brightness, brightness, ZMK_LED_WAKE_FADE_DURATION_MS, false);
+        return;
+    }
+
+    if (light_resume_fade_pending && light_get_brightness() == 0) {
+        light_resume_fade_pending = false;
+    }
+
+    if (light_output_initialized && light_last_output_brightness == 0 && brightness > 0) {
+        light_fade_start(0, brightness, ZMK_LED_WAKE_FADE_DURATION_MS, false);
+        return;
+    }
+#endif
     const uint8_t level = brightness == 0
                               ? LEVEL_DARK
                               : (IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT)
@@ -219,6 +261,11 @@ static void light_refresh(void) {
     int rc = led_set_brightness(light_dev, 0, level);
     if (rc != 0) {
         LOG_ERR("Failed to set the trackpad light: %d", rc);
+    } else {
+#if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+        light_last_output_brightness = brightness;
+        light_output_initialized = true;
+#endif
     }
 }
 
@@ -265,7 +312,7 @@ static struct k_work_delayable light_save_work;
 void zmk_trackpad_scroll_light_update(bool scrolling) {
     light_scrolling = scrolling;
     if (scrolling) {
-        light_auto_off_fade_cancel();
+        light_fade_cancel();
     }
     light_refresh();
 }
@@ -287,8 +334,8 @@ bool zmk_trackpad_light_enabled(void) {
 }
 
 void zmk_trackpad_light_set_enabled(bool on) {
-    light_auto_off_fade_cancel();
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    light_fade_cancel();
     if (on) {
         zmk_backlight_on();
     } else {
@@ -308,8 +355,8 @@ uint8_t zmk_trackpad_light_get_brightness(void) {
 }
 
 void zmk_trackpad_light_set_brightness(uint8_t brightness) {
-    light_auto_off_fade_cancel();
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    light_fade_cancel();
     zmk_backlight_set_brt(MIN(brightness, 100));
 #else
     brightness = MIN(brightness, 100);
@@ -317,6 +364,7 @@ void zmk_trackpad_light_set_brightness(uint8_t brightness) {
         return;
     }
 
+    light_fade_cancel();
     light_brightness = brightness;
     light_refresh();
 
@@ -327,25 +375,30 @@ void zmk_trackpad_light_set_brightness(uint8_t brightness) {
 }
 
 void zmk_trackpad_light_set_suspended(bool suspended) {
+    bool was_suspended = light_suspended;
     if (!suspended && light_suspend_after_fade) {
-        light_auto_off_fade_cancel();
+#if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+        light_resume_fade_pending = true;
+#endif
+        light_fade_cancel();
         light_refresh();
-    } else if (suspended && !light_suspended) {
-        light_auto_off_fade_cancel();
     }
 
-#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
-    // Avoid restarting the breathing animation if the state did not change.
-    if (light_suspended == suspended) {
+    if (was_suspended == suspended) {
         return;
     }
 
     if (suspended) {
-        light_auto_off_fade_cancel();
+        light_fade_cancel();
+    } else {
+#if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+        light_resume_fade_pending = true;
+#endif
     }
 
     light_suspended = suspended;
 
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
     if (suspended) {
         // Begin at fully dark, then fade toward fully lit.
         breathe_brightness = 0;
@@ -355,6 +408,11 @@ void zmk_trackpad_light_set_suspended(bool suspended) {
             int rc = led_set_brightness(light_dev, 0, light_level_from_brightness(0));
             if (rc != 0) {
                 LOG_ERR("Failed to start the trackpad breathing light: %d", rc);
+            } else {
+#if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+                light_last_output_brightness = 0;
+                light_output_initialized = true;
+#endif
             }
         }
 
@@ -364,10 +422,6 @@ void zmk_trackpad_light_set_suspended(bool suspended) {
         light_refresh();
     }
 #else
-    if (suspended) {
-        light_auto_off_fade_cancel();
-    }
-    light_suspended = suspended;
     light_refresh();
 #endif
 }
@@ -383,30 +437,24 @@ void zmk_trackpad_light_set_suspended_fade(bool suspended, uint32_t duration_ms)
     }
 
     uint8_t brightness = 0;
-    if (light_auto_off_fading) {
-        brightness = light_auto_off_fade_current_brightness();
+    if (light_fade_active) {
+        brightness = light_fade_current_brightness();
     } else if (!light_auto_off && !light_scrolling) {
         brightness = light_get_brightness();
     }
 
-    light_auto_off_fade_cancel();
     if (brightness == 0 || duration_ms == 0) {
         zmk_trackpad_light_set_suspended(true);
         return;
     }
 
-    light_auto_off_fade_start_brightness = brightness;
-    light_fade_duration_ms = duration_ms;
-    light_auto_off_fade_start_time = k_uptime_get();
-    light_auto_off_fading = true;
-    light_suspend_after_fade = true;
-    k_work_reschedule(&light_auto_off_fade_work, K_MSEC(LIGHT_IDLE_FADE_INTERVAL_MS));
+    light_fade_start(brightness, 0, duration_ms, true);
 }
 
 void zmk_trackpad_light_set_auto_off(bool auto_off, bool fade) {
     if (light_auto_off == auto_off) {
-        if (auto_off && light_auto_off_fading && !light_suspend_after_fade && !fade) {
-            light_auto_off_fade_cancel();
+        if (auto_off && light_fade_active && !light_suspend_after_fade && !fade) {
+            light_fade_cancel();
             light_refresh();
         }
         return;
@@ -416,19 +464,16 @@ void zmk_trackpad_light_set_auto_off(bool auto_off, bool fade) {
     light_auto_off = auto_off;
 
     if (auto_off && fade && !was_auto_off && !light_suspended && !light_scrolling) {
-        light_auto_off_fade_start_brightness = light_get_brightness();
-        if (light_auto_off_fade_start_brightness > 0) {
-            light_fade_duration_ms = LIGHT_IDLE_FADE_DURATION_MS;
-            light_auto_off_fade_start_time = k_uptime_get();
-            light_auto_off_fading = true;
-            light_suspend_after_fade = false;
-            k_work_reschedule(&light_auto_off_fade_work, K_MSEC(LIGHT_IDLE_FADE_INTERVAL_MS));
+        uint8_t brightness = light_fade_active ? light_fade_current_brightness()
+                                               : light_get_brightness();
+        if (brightness > 0) {
+            light_fade_start(brightness, 0, ZMK_LED_FADE_DURATION_MS, false);
             return;
         }
     }
 
     if (!auto_off && !light_suspend_after_fade) {
-        light_auto_off_fade_cancel();
+        light_fade_cancel();
     }
 
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
@@ -445,7 +490,7 @@ void zmk_trackpad_light_set_auto_off(bool auto_off, bool fade) {
 }
 
 static int zmk_trackpad_scroll_light_init(void) {
-    k_work_init_delayable(&light_auto_off_fade_work, light_auto_off_fade_work_handler);
+    k_work_init_delayable(&light_fade_work, light_fade_work_handler);
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_SUSPEND_BREATHING)
     k_work_init_delayable(&breathe_work, breathe_work_handler);
 #endif

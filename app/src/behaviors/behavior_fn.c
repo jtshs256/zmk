@@ -18,14 +18,12 @@
 #include <zmk/backlight.h>
 #include <zmk/keymap.h>
 #include <zmk/fn.h>
+#include <zmk/host_lock.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-#define LOCK_LAYER 5
 #define SYM_LAYER 1
 #define UPPER_LAYER 2
-#define UNLOCK_LEFT_LAYER 6
-#define UNLOCK_RIGHT_LAYER 7
 #define CONFIG_LAYER 8
 
 enum fn_action {
@@ -61,9 +59,9 @@ static uint8_t target_layer(enum fn_layer_target target) {
     case FN_TARGET_CONFIG:
         return CONFIG_LAYER;
     case FN_TARGET_UNLOCK_LEFT:
-        return UNLOCK_LEFT_LAYER;
+        return ZMK_HOST_UNLOCK_LEFT_LAYER;
     case FN_TARGET_UNLOCK_RIGHT:
-        return UNLOCK_RIGHT_LAYER;
+        return ZMK_HOST_UNLOCK_RIGHT_LAYER;
     default:
         return 0;
     }
@@ -81,7 +79,7 @@ static int deactivate_target(enum fn_layer_target target) {
 
 static int on_fn_left_pressed(struct zmk_behavior_binding_event event) {
     left_fn_down = true;
-    left_fn_target = zmk_keymap_layer_active(LOCK_LAYER)
+    left_fn_target = zmk_keymap_layer_active(ZMK_HOST_LOCK_LAYER)
                          ? FN_TARGET_UNLOCK_LEFT
                          : FN_TARGET_SYM;
 
@@ -117,7 +115,7 @@ static int on_fn_left_released(struct zmk_behavior_binding_event event) {
 static int on_fn_right_pressed(struct zmk_behavior_binding_event event) {
     right_fn_down = true;
 
-    if (zmk_keymap_layer_active(LOCK_LAYER)) {
+    if (zmk_keymap_layer_active(ZMK_HOST_LOCK_LAYER)) {
         right_fn_target = FN_TARGET_UNLOCK_RIGHT;
     } else if (zmk_keymap_layer_active(SYM_LAYER) && left_fn_down) {
         right_fn_target = FN_TARGET_CONFIG;

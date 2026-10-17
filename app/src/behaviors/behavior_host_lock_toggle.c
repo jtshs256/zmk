@@ -8,7 +8,6 @@
 
 #include <zephyr/device.h>
 #include <zephyr/logging/log.h>
-#include <stdbool.h>
 
 #include <drivers/behavior.h>
 #include <zmk/backlight.h>
@@ -16,38 +15,46 @@
 #include <zmk/keymap.h>
 #include <zmk/trackpad.h>
 #include <zmk/fn.h>
+#include <zmk/led_fade.h>
 #include <zmk/host_lock.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-#define HOST_LOCK_LAYER 5
-#define HOST_LOCK_MANUAL_FADE_DURATION_MS 500
+int zmk_host_lock_force_unlock(void) {
+    int ret = zmk_keymap_layer_deactivate(ZMK_HOST_LOCK_LAYER);
+    if (ret < 0) {
+        return ret;
+    }
+
+    ret = zmk_keymap_layer_deactivate(ZMK_HOST_UNLOCK_LEFT_LAYER);
+    if (ret < 0) {
+        return ret;
+    }
+
+    return zmk_keymap_layer_deactivate(ZMK_HOST_UNLOCK_RIGHT_LAYER);
+}
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
-
-static bool fn_is_down(void) {
-    return zmk_fn_is_down();
-}
 
 static int on_host_lock_pressed(struct zmk_behavior_binding *binding,
                                 struct zmk_behavior_binding_event event) {
     // This behavior is only bound to Fn-layer Esc positions and LOCK Esc.
     // Checking the momentary layer state prevents Esc alone from unlocking.
-    if (!fn_is_down()) {
+    if (!zmk_fn_is_down()) {
         return ZMK_BEHAVIOR_OPAQUE;
     }
 
-    if (!zmk_keymap_layer_active(HOST_LOCK_LAYER)) {
+    if (!zmk_keymap_layer_active(ZMK_HOST_LOCK_LAYER)) {
         zmk_trackpad_set_enabled(false);
 
-        int ret = zmk_backlight_suspend_fade(HOST_LOCK_MANUAL_FADE_DURATION_MS);
+        int ret = zmk_backlight_suspend_fade(ZMK_MANUAL_LOCK_FADE_DURATION_MS);
         if (ret < 0) {
             LOG_ERR("Host lock: backlight suspend failed: %d", ret);
         }
 
-        zmk_trackpad_light_set_suspended_fade(true, HOST_LOCK_MANUAL_FADE_DURATION_MS);
+        zmk_trackpad_light_set_suspended_fade(true, ZMK_MANUAL_LOCK_FADE_DURATION_MS);
 
-        ret = zmk_keymap_layer_activate(HOST_LOCK_LAYER);
+        ret = zmk_keymap_layer_activate(ZMK_HOST_LOCK_LAYER);
         if (ret < 0) {
             LOG_ERR("Host lock: LOCK layer activation failed: %d", ret);
             zmk_trackpad_set_enabled(true);
@@ -77,7 +84,7 @@ static int on_host_lock_pressed(struct zmk_behavior_binding *binding,
 
     zmk_trackpad_light_set_suspended(false);
 
-    ret = zmk_keymap_layer_deactivate(HOST_LOCK_LAYER);
+    ret = zmk_keymap_layer_deactivate(ZMK_HOST_LOCK_LAYER);
     if (ret < 0) {
         LOG_ERR("Host lock: LOCK layer deactivation failed: %d", ret);
     }

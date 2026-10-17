@@ -27,7 +27,9 @@
 #include <zmk/events/hid_indicators_changed.h>
 
 #include <zmk/backlight.h>
+#include <zmk/host_lock.h>
 #include <zmk/keymap.h>
+#include <zmk/led_fade.h>
 #include <zmk/trackpad.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -65,9 +67,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  *   7 = UNLOCK_RIGHT
  *   8 = CONFIG
  */
-#define HOST_LOCK_LAYER 5
-#define HOST_KANA_LOCK_FADE_DURATION_MS 1000
-
 static bool host_locked;
 
 bool zmk_host_lock_active(void)
@@ -92,13 +91,13 @@ static void host_lock_sleep(void)
      */
     zmk_trackpad_set_enabled(false);
     /* Fade out, then suspend without changing the saved backlight state. */
-    ret = zmk_backlight_suspend_fade(HOST_KANA_LOCK_FADE_DURATION_MS);
+    ret = zmk_backlight_suspend_fade(ZMK_LED_FADE_DURATION_MS);
 
     if (ret < 0) {
         LOG_ERR("Host lock: backlight suspend failed: %d", ret);
     }
 
-    zmk_trackpad_light_set_suspended_fade(true, HOST_KANA_LOCK_FADE_DURATION_MS);
+    zmk_trackpad_light_set_suspended_fade(true, ZMK_LED_FADE_DURATION_MS);
 
     /*
      * Explicitly activate LOCK.
@@ -106,7 +105,7 @@ static void host_lock_sleep(void)
      * Do not use &tog LOCK here because sleep is a state,
      * not a toggle operation.
      */
-    ret = zmk_keymap_layer_activate(HOST_LOCK_LAYER);
+    ret = zmk_keymap_layer_activate(ZMK_HOST_LOCK_LAYER);
 
     if (ret < 0) {
         LOG_ERR("Host lock: LOCK layer activation failed: %d", ret);
@@ -122,13 +121,11 @@ static void host_lock_wake(void)
 
     LOG_INF("Host lock: leaving keyboard sleep");
 
-    /*
-     * Remove LOCK first so normal key processing is restored.
-     */
-    ret = zmk_keymap_layer_deactivate(HOST_LOCK_LAYER);
+    /* Clear both the host lock and any manual lock layered over it. */
+    ret = zmk_host_lock_force_unlock();
 
     if (ret < 0) {
-        LOG_ERR("Host lock: LOCK layer deactivation failed: %d", ret);
+        LOG_ERR("Host lock: force unlock failed: %d", ret);
     }
 
     /*
