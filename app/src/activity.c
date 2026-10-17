@@ -62,7 +62,11 @@ int set_state(enum zmk_activity_state state) {
 enum zmk_activity_state zmk_activity_get_state() { return activity_state; }
 
 int activity_event_listener(const zmk_event_t *eh) {
-    return zmk_activity_notify();
+    int ret = zmk_activity_notify();
+    if (ret != 0) {
+        LOG_ERR("Activity notify failed: %d", ret);
+    }
+    return ZMK_EV_EVENT_BUBBLE;
 }
 
 int zmk_activity_notify(void) {

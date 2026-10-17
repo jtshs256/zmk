@@ -68,6 +68,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  *   8 = CONFIG
  */
 static bool host_locked;
+static bool host_kana_last;
 static bool backlight_should_restore_after_lock;
 
 bool zmk_host_lock_active(void)
@@ -91,26 +92,10 @@ static void host_lock_sleep(void)
         zmk_backlight_is_on() || zmk_backlight_was_idle_auto_off();
 
     /*
-     * Stop trackpad processing first.
-     */
-    zmk_trackpad_set_enabled(false);
-    /* Fade out, then suspend without changing the saved backlight state. */
-    ret = zmk_backlight_suspend_fade(ZMK_LED_FADE_DURATION_MS);
-
-    if (ret < 0) {
-        LOG_ERR("Host lock: backlight suspend failed: %d", ret);
-    }
-
-    zmk_trackpad_light_set_suspended_fade(true, ZMK_LED_FADE_DURATION_MS);
-
-    /*
-     * Explicitly activate LOCK.
-     *
      * Do not use &tog LOCK here because sleep is a state,
      * not a toggle operation.
      */
-    ret = zmk_keymap_layer_activate(ZMK_HOST_LOCK_LAYER);
-
+    ret = zmk_host_lock_engage(ZMK_LED_FADE_DURATION_MS);
     if (ret < 0) {
         LOG_ERR("Host lock: LOCK layer activation failed: %d", ret);
     }
@@ -132,29 +117,8 @@ static void host_lock_wake(void)
         LOG_ERR("Host lock: force unlock failed: %d", ret);
     }
 
-    /* Treat host unlock as activity so idle auto-off restores the backlight. */
-    ret = zmk_activity_notify();
-    if (ret < 0) {
-        LOG_ERR("Host lock: activity notification failed: %d", ret);
-    }
-
-    /* Resume after activity handling so the backlight wake fade is preserved. */
-    ret = zmk_backlight_resume();
-    if (ret < 0) {
-        LOG_ERR("Host lock: backlight resume failed: %d", ret);
-    }
-
-    ret = zmk_backlight_restore_after_host_lock(backlight_should_restore_after_lock);
-    if (ret < 0) {
-        LOG_ERR("Host lock: backlight restore failed: %d", ret);
-    }
+    zmk_host_lock_release(backlight_should_restore_after_lock);
     backlight_should_restore_after_lock = false;
-
-    /*
-     * Finally restore trackpad processing.
-     */
-    zmk_trackpad_light_set_suspended(false);
-    zmk_trackpad_set_enabled(true);
 }
 
 /*
@@ -175,14 +139,24 @@ static int host_lock_hid_sleep_listener(const zmk_event_t *eh)
     const bool kana =
         (ev->indicators & HOST_HID_INDICATOR_KANA) != 0;
 
-    if (kana == host_locked) {
+    /*
+     * Only a Kana change counts, so other LED changes never lock or unlock.
+     * Kana OFF clears a manual lock too, but only as a change from ON.
+     */
+    const bool kana_changed = kana != host_kana_last;
+    host_kana_last = kana;
+
+    if (!kana_changed) {
         return ZMK_EV_EVENT_BUBBLE;
     }
-    host_locked = kana;
 
     if (kana) {
-        host_lock_sleep();
-    } else {
+        if (!host_locked) {
+            host_locked = true;
+            host_lock_sleep();
+        }
+    } else if (host_locked || zmk_keymap_layer_active(ZMK_HOST_LOCK_LAYER)) {
+        host_locked = false;
         host_lock_wake();
     }
 

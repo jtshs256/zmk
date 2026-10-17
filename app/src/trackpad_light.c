@@ -54,7 +54,6 @@ static bool light_initialized;
 static uint8_t light_get_brightness(void);
 static void light_refresh(void);
 
-#define LEVEL_DARK (IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT) ? 0 : 100)
 static bool light_fade_active;
 static bool light_suspend_after_fade;
 static uint8_t light_fade_start_brightness;
@@ -268,11 +267,7 @@ static void light_refresh(void) {
         light_fade_skip_until = 0;
     }
 #endif
-    const uint8_t level = brightness == 0
-                              ? LEVEL_DARK
-                              : (IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT)
-                                     ? brightness
-                                     : 100 - brightness);
+    const uint8_t level = light_level_from_brightness(brightness);
     int rc = led_set_brightness(light_dev, 0, level);
     if (rc != 0) {
         LOG_ERR("Failed to set the trackpad light: %d", rc);

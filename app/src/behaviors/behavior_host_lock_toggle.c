@@ -10,6 +10,7 @@
 #include <zephyr/logging/log.h>
 
 #include <drivers/behavior.h>
+#include <zmk/activity.h>
 #include <zmk/backlight.h>
 #include <zmk/behavior.h>
 #include <zmk/keymap.h>
@@ -21,17 +22,57 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 int zmk_host_lock_force_unlock(void) {
+    int first_err = 0;
+
     int ret = zmk_keymap_layer_deactivate(ZMK_HOST_LOCK_LAYER);
-    if (ret < 0) {
-        return ret;
+    if (ret < 0 && first_err == 0) {
+        first_err = ret;
     }
 
     ret = zmk_keymap_layer_deactivate(ZMK_HOST_UNLOCK_LEFT_LAYER);
-    if (ret < 0) {
-        return ret;
+    if (ret < 0 && first_err == 0) {
+        first_err = ret;
     }
 
-    return zmk_keymap_layer_deactivate(ZMK_HOST_UNLOCK_RIGHT_LAYER);
+    ret = zmk_keymap_layer_deactivate(ZMK_HOST_UNLOCK_RIGHT_LAYER);
+    if (ret < 0 && first_err == 0) {
+        first_err = ret;
+    }
+
+    return first_err;
+}
+
+int zmk_host_lock_engage(uint32_t fade_ms) {
+    zmk_trackpad_set_enabled(false);
+
+    int ret = zmk_backlight_suspend_fade(fade_ms);
+    if (ret < 0) {
+        LOG_ERR("Host lock: backlight suspend failed: %d", ret);
+    }
+
+    zmk_trackpad_light_set_suspended_fade(true, fade_ms);
+
+    return zmk_keymap_layer_activate(ZMK_HOST_LOCK_LAYER);
+}
+
+void zmk_host_lock_release(bool restore_backlight) {
+    int ret = zmk_activity_notify();
+    if (ret < 0) {
+        LOG_ERR("Host lock: activity notification failed: %d", ret);
+    }
+
+    ret = zmk_backlight_resume();
+    if (ret < 0) {
+        LOG_ERR("Host lock: backlight resume failed: %d", ret);
+    }
+
+    ret = zmk_backlight_restore_after_host_lock(restore_backlight);
+    if (ret < 0) {
+        LOG_ERR("Host lock: backlight restore failed: %d", ret);
+    }
+
+    zmk_trackpad_light_set_suspended(false);
+    zmk_trackpad_set_enabled(true);
 }
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
@@ -45,24 +86,9 @@ static int on_host_lock_pressed(struct zmk_behavior_binding *binding,
     }
 
     if (!zmk_keymap_layer_active(ZMK_HOST_LOCK_LAYER)) {
-        zmk_trackpad_set_enabled(false);
-
-        int ret = zmk_backlight_suspend_fade(ZMK_MANUAL_LOCK_FADE_DURATION_MS);
-        if (ret < 0) {
-            LOG_ERR("Host lock: backlight suspend failed: %d", ret);
-        }
-
-        zmk_trackpad_light_set_suspended_fade(true, ZMK_MANUAL_LOCK_FADE_DURATION_MS);
-
-        ret = zmk_keymap_layer_activate(ZMK_HOST_LOCK_LAYER);
+        int ret = zmk_host_lock_engage(ZMK_LED_FADE_DURATION_MS);
         if (ret < 0) {
             LOG_ERR("Host lock: LOCK layer activation failed: %d", ret);
-            zmk_trackpad_set_enabled(true);
-            ret = zmk_backlight_resume();
-            if (ret < 0) {
-                LOG_ERR("Host lock: backlight rollback failed: %d", ret);
-            }
-            zmk_trackpad_light_set_suspended(false);
         }
 
         return ZMK_BEHAVIOR_OPAQUE;
@@ -75,19 +101,12 @@ static int on_host_lock_pressed(struct zmk_behavior_binding *binding,
     }
 #endif
 
-    zmk_trackpad_set_enabled(true);
-
-    int ret = zmk_backlight_resume();
-    if (ret < 0) {
-        LOG_ERR("Host lock: backlight resume failed: %d", ret);
-    }
-
-    zmk_trackpad_light_set_suspended(false);
-
-    ret = zmk_keymap_layer_deactivate(ZMK_HOST_LOCK_LAYER);
+    int ret = zmk_keymap_layer_deactivate(ZMK_HOST_LOCK_LAYER);
     if (ret < 0) {
         LOG_ERR("Host lock: LOCK layer deactivation failed: %d", ret);
     }
+
+    zmk_host_lock_release(false);
 
     return ZMK_BEHAVIOR_OPAQUE;
 }
