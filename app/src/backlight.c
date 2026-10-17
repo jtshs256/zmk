@@ -50,13 +50,6 @@ static struct backlight_state state = {.brightness = CONFIG_ZMK_BACKLIGHT_BRT_ST
 // what lets resume bring back exactly what was there before. Not persisted.
 static bool suspended = false;
 
-#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE) || IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
-#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
-static bool auto_off_idle;
-static bool auto_off_idle_enabled = true;
-static bool idle_prev_state;
-#endif
-#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
 enum backlight_auto_off_flash_phase {
     BACKLIGHT_AUTO_OFF_FLASH_IDLE,
     BACKLIGHT_AUTO_OFF_FLASH_DARK,
@@ -66,19 +59,39 @@ enum backlight_auto_off_flash_phase {
 static enum backlight_auto_off_flash_phase auto_off_flash_phase;
 static struct k_work_delayable auto_off_flash_work;
 static void backlight_auto_off_flash_work_handler(struct k_work *work);
+
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE) || IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+#define BACKLIGHT_IDLE_FADE_DURATION_MS 1000
+#define BACKLIGHT_IDLE_FADE_INTERVAL_MS 20
+
+static bool auto_off_idle;
+static bool auto_off_idle_enabled = true;
+static bool idle_prev_state;
+static bool idle_fade_active;
+static uint8_t idle_fade_start_brightness;
+static uint8_t idle_fade_brightness;
+static int64_t idle_fade_start_time;
+static struct k_work_delayable idle_fade_work;
+static void backlight_idle_fade_work_handler(struct k_work *work);
 #endif
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
 static bool auto_off_usb;
 #endif
-static void backlight_update_trackpad_auto_off(void);
+static void backlight_update_trackpad_auto_off(bool fade);
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
-static int backlight_auto_state(bool *prev_state, bool new_state, bool *auto_off_state);
+static int backlight_auto_state(bool *prev_state, bool new_state, bool *auto_off_state,
+                                bool fade);
 #endif
 #endif
 
 static int zmk_backlight_update() {
     uint8_t brt = suspended ? 0 : zmk_backlight_get_brt();
-#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+    if (!suspended && idle_fade_active) {
+        brt = idle_fade_brightness;
+    }
+#endif
     if (!suspended) {
         if (auto_off_flash_phase == BACKLIGHT_AUTO_OFF_FLASH_DARK) {
             brt = 0;
@@ -86,7 +99,6 @@ static int zmk_backlight_update() {
             brt = MAX(state.brightness, CONFIG_ZMK_BACKLIGHT_BRT_STEP);
         }
     }
-#endif
     LOG_DBG("Update backlight brightness: %d%%", brt);
 
     for (int i = 0; i < BACKLIGHT_NUM_LEDS; i++) {
@@ -102,7 +114,45 @@ static int zmk_backlight_update() {
     return 0;
 }
 
-#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+static void backlight_idle_fade_work_handler(struct k_work *work) {
+    if (!idle_fade_active) {
+        return;
+    }
+
+    int64_t elapsed = k_uptime_get() - idle_fade_start_time;
+    if (elapsed >= BACKLIGHT_IDLE_FADE_DURATION_MS) {
+        idle_fade_active = false;
+        idle_fade_brightness = 0;
+        zmk_backlight_update();
+        return;
+    }
+
+    uint32_t remaining = (uint32_t)(BACKLIGHT_IDLE_FADE_DURATION_MS - elapsed);
+    idle_fade_brightness =
+        (uint8_t)((idle_fade_start_brightness * remaining) / BACKLIGHT_IDLE_FADE_DURATION_MS);
+    zmk_backlight_update();
+    k_work_reschedule(&idle_fade_work, K_MSEC(BACKLIGHT_IDLE_FADE_INTERVAL_MS));
+}
+
+static void backlight_idle_fade_start(void) {
+    idle_fade_start_brightness = zmk_backlight_get_brt();
+    if (suspended || idle_fade_start_brightness == 0) {
+        return;
+    }
+
+    idle_fade_brightness = idle_fade_start_brightness;
+    idle_fade_start_time = k_uptime_get();
+    idle_fade_active = true;
+    k_work_reschedule(&idle_fade_work, K_MSEC(BACKLIGHT_IDLE_FADE_INTERVAL_MS));
+}
+
+static void backlight_idle_fade_cancel(void) {
+    idle_fade_active = false;
+    k_work_cancel_delayable(&idle_fade_work);
+}
+#endif
+
 static void backlight_auto_off_flash_work_handler(struct k_work *work) {
     if (auto_off_flash_phase == BACKLIGHT_AUTO_OFF_FLASH_DARK) {
         auto_off_flash_phase = BACKLIGHT_AUTO_OFF_FLASH_LIT;
@@ -131,7 +181,6 @@ static void backlight_auto_off_flash_cancel(void) {
         zmk_backlight_update();
     }
 }
-#endif
 
 #if IS_ENABLED(CONFIG_SETTINGS)
 static int backlight_settings_load_cb(const char *name, size_t len, settings_read_cb read_cb,
@@ -188,15 +237,16 @@ static int zmk_backlight_init(void) {
     }
     k_work_init_delayable(&backlight_save_work, backlight_save_work_handler);
 #endif
-#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
     k_work_init_delayable(&auto_off_flash_work, backlight_auto_off_flash_work_handler);
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+    k_work_init_delayable(&idle_fade_work, backlight_idle_fade_work_handler);
 #endif
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
     state.on = zmk_usb_is_powered();
     auto_off_usb = !state.on;
 #endif
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE) || IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
-    backlight_update_trackpad_auto_off();
+    backlight_update_trackpad_auto_off(false);
 #endif
     return zmk_backlight_update();
 }
@@ -215,23 +265,32 @@ static int zmk_backlight_update_and_save() {
 }
 
 int zmk_backlight_on() {
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+    backlight_idle_fade_cancel();
+#endif
     state.brightness = MAX(state.brightness, CONFIG_ZMK_BACKLIGHT_BRT_STEP);
     state.on = true;
     return zmk_backlight_update_and_save();
 }
 
 int zmk_backlight_off() {
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+    backlight_idle_fade_cancel();
+#endif
     state.on = false;
     return zmk_backlight_update_and_save();
 }
 
 int zmk_backlight_toggle() { return state.on ? zmk_backlight_off() : zmk_backlight_on(); }
 
+void zmk_backlight_flash(void) { backlight_auto_off_flash_start(); }
+
 int zmk_backlight_suspend() {
-    suspended = true;
-#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
-    backlight_auto_off_flash_cancel();
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+    backlight_idle_fade_cancel();
 #endif
+    suspended = true;
+    backlight_auto_off_flash_cancel();
     return zmk_backlight_update();
 }
 
@@ -243,6 +302,9 @@ int zmk_backlight_resume() {
 bool zmk_backlight_is_on() { return state.on; }
 
 int zmk_backlight_set_brt(uint8_t brightness) {
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+    backlight_idle_fade_cancel();
+#endif
     state.brightness = MIN(brightness, BRT_MAX);
     state.on = (state.brightness > 0);
     return zmk_backlight_update_and_save();
@@ -272,9 +334,9 @@ int zmk_backlight_toggle_auto_off_idle() {
     // Apply a changed setting immediately if the keyboard is already idle.
     int rc = 0;
     if (!currently_active) {
-        rc = backlight_auto_state(&idle_prev_state, !enable_auto_off, &auto_off_idle);
+        rc = backlight_auto_state(&idle_prev_state, !enable_auto_off, &auto_off_idle, false);
     } else {
-        backlight_update_trackpad_auto_off();
+        backlight_update_trackpad_auto_off(false);
     }
 
     if (rc != 0) {
@@ -298,7 +360,7 @@ int zmk_backlight_toggle_auto_off_idle() {
 }
 
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE) || IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
-static void backlight_update_trackpad_auto_off(void) {
+static void backlight_update_trackpad_auto_off(bool fade) {
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT)
     bool auto_off = false;
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
@@ -307,17 +369,33 @@ static void backlight_update_trackpad_auto_off(void) {
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
     auto_off = auto_off || auto_off_usb;
 #endif
-    zmk_trackpad_light_set_auto_off(auto_off);
+    zmk_trackpad_light_set_auto_off(auto_off, fade);
+#else
+    (void)fade;
 #endif
 }
 
-static int backlight_auto_state(bool *prev_state, bool new_state, bool *auto_off_state) {
+static int backlight_auto_state(bool *prev_state, bool new_state, bool *auto_off_state,
+                                bool fade) {
     *auto_off_state = !new_state;
-    backlight_update_trackpad_auto_off();
+    backlight_update_trackpad_auto_off(fade);
 
     if (state.on == new_state) {
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+        if (!new_state && idle_fade_active && !fade) {
+            backlight_idle_fade_cancel();
+            return zmk_backlight_update();
+        }
+#endif
         return 0;
     }
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
+    if (new_state) {
+        backlight_idle_fade_cancel();
+    } else if (fade) {
+        backlight_idle_fade_start();
+    }
+#endif
     state.on = new_state && *prev_state;
     *prev_state = !new_state;
     return zmk_backlight_update();
@@ -335,17 +413,17 @@ static int backlight_event_listener(const zmk_event_t *eh) {
         if (!auto_off_idle_enabled) {
             // Keep the trackpad policy in sync while the runtime option is disabled.
             auto_off_idle = false;
-            backlight_update_trackpad_auto_off();
+            backlight_update_trackpad_auto_off(false);
             return 0;
         }
-        return backlight_auto_state(&idle_prev_state, active, &auto_off_idle);
+        return backlight_auto_state(&idle_prev_state, active, &auto_off_idle, !active);
     }
 #endif
 
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
     if (as_zmk_usb_conn_state_changed(eh)) {
         static bool prev_state = false;
-        return backlight_auto_state(&prev_state, zmk_usb_is_powered(), &auto_off_usb);
+        return backlight_auto_state(&prev_state, zmk_usb_is_powered(), &auto_off_usb, false);
     }
 #endif
 

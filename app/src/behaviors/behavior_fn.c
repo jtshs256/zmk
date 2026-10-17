@@ -8,12 +8,14 @@
 
 #include <zephyr/device.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 #include <drivers/behavior.h>
 #include <zmk/behavior.h>
+#include <zmk/backlight.h>
 #include <zmk/keymap.h>
 #include <zmk/fn.h>
 
@@ -157,6 +159,11 @@ static int on_fn_lock_sym_pressed(struct zmk_behavior_binding *binding,
     sym_fn_locked = !sym_fn_locked;
     sym_lock_key_consumed = true;
     LOG_INF("SYM Fn Lock %s", sym_fn_locked ? "enabled" : "disabled");
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT)
+    if (sym_fn_locked) {
+        zmk_backlight_flash();
+    }
+#endif
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
