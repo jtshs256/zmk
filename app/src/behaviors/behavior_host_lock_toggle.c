@@ -86,7 +86,7 @@ static int on_host_lock_pressed(struct zmk_behavior_binding *binding,
     }
 
     if (!zmk_keymap_layer_active(ZMK_HOST_LOCK_LAYER)) {
-        int ret = zmk_host_lock_engage(ZMK_LED_FADE_DURATION_MS);
+        int ret = zmk_host_lock_engage(ZMK_MANUAL_LOCK_FADE_DURATION_MS);
         if (ret < 0) {
             LOG_ERR("Host lock: LOCK layer activation failed: %d", ret);
         }
