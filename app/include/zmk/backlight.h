@@ -9,6 +9,7 @@
 int zmk_backlight_on();
 int zmk_backlight_off();
 int zmk_backlight_toggle();
+int zmk_backlight_toggle_auto_off_idle();
 int zmk_backlight_suspend();
 int zmk_backlight_resume();
 bool zmk_backlight_is_on();

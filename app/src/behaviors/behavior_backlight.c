@@ -75,6 +75,8 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
         return zmk_backlight_suspend();
     case BL_RESUME_CMD:
         return zmk_backlight_resume();
+    case BL_AUTO_OFF_TOG_CMD:
+        return zmk_backlight_toggle_auto_off_idle();
     default:
         LOG_ERR("Unknown backlight command: %d", binding->param1);
     }

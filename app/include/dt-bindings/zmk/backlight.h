@@ -13,6 +13,7 @@
 #define BL_SET_CMD 6
 #define BL_SUSPEND_CMD 7
 #define BL_RESUME_CMD 8
+#define BL_AUTO_OFF_TOG_CMD 9
 
 #define BL_ON BL_ON_CMD 0
 #define BL_OFF BL_OFF_CMD 0
@@ -24,3 +25,4 @@
 /* Hold the backlight off without changing its on/off state, and let it go again. */
 #define BL_SUSPEND BL_SUSPEND_CMD 0
 #define BL_RESUME BL_RESUME_CMD 0
+#define BL_AUTO_OFF_TOG BL_AUTO_OFF_TOG_CMD 0

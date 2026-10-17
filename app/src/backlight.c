@@ -53,11 +53,16 @@ static bool suspended = false;
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE) || IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
 static bool auto_off_idle;
+static bool auto_off_idle_enabled = true;
+static bool idle_prev_state;
 #endif
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
 static bool auto_off_usb;
 #endif
 static void backlight_update_trackpad_auto_off(void);
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+static int backlight_auto_state(bool *prev_state, bool new_state, bool *auto_off_state);
+#endif
 #endif
 
 static int zmk_backlight_update() {
@@ -183,6 +188,24 @@ uint8_t zmk_backlight_calc_brt_cycle() {
     }
 }
 
+int zmk_backlight_toggle_auto_off_idle() {
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+    bool currently_active = zmk_activity_get_state() == ZMK_ACTIVITY_ACTIVE;
+    bool enable_auto_off = !auto_off_idle_enabled;
+    auto_off_idle_enabled = enable_auto_off;
+
+    // Apply a changed setting immediately if the keyboard is already idle.
+    if (!currently_active) {
+        return backlight_auto_state(&idle_prev_state, !enable_auto_off, &auto_off_idle);
+    }
+
+    backlight_update_trackpad_auto_off();
+    return 0;
+#else
+    return -ENOTSUP;
+#endif
+}
+
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE) || IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
 static void backlight_update_trackpad_auto_off(void) {
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT)
@@ -213,9 +236,14 @@ static int backlight_event_listener(const zmk_event_t *eh) {
 
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE)
     if (as_zmk_activity_state_changed(eh)) {
-        static bool prev_state = false;
-        return backlight_auto_state(&prev_state, zmk_activity_get_state() == ZMK_ACTIVITY_ACTIVE,
-                                    &auto_off_idle);
+        bool active = zmk_activity_get_state() == ZMK_ACTIVITY_ACTIVE;
+        if (!auto_off_idle_enabled) {
+            // Keep the trackpad policy in sync while the runtime option is disabled.
+            auto_off_idle = false;
+            backlight_update_trackpad_auto_off();
+            return 0;
+        }
+        return backlight_auto_state(&idle_prev_state, active, &auto_off_idle);
     }
 #endif
 
