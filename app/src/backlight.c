@@ -56,6 +56,17 @@ static bool auto_off_idle;
 static bool auto_off_idle_enabled = true;
 static bool idle_prev_state;
 #endif
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+enum backlight_auto_off_flash_phase {
+    BACKLIGHT_AUTO_OFF_FLASH_IDLE,
+    BACKLIGHT_AUTO_OFF_FLASH_DARK,
+    BACKLIGHT_AUTO_OFF_FLASH_LIT,
+};
+
+static enum backlight_auto_off_flash_phase auto_off_flash_phase;
+static struct k_work_delayable auto_off_flash_work;
+static void backlight_auto_off_flash_work_handler(struct k_work *work);
+#endif
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
 static bool auto_off_usb;
 #endif
@@ -67,6 +78,15 @@ static int backlight_auto_state(bool *prev_state, bool new_state, bool *auto_off
 
 static int zmk_backlight_update() {
     uint8_t brt = suspended ? 0 : zmk_backlight_get_brt();
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+    if (!suspended) {
+        if (auto_off_flash_phase == BACKLIGHT_AUTO_OFF_FLASH_DARK) {
+            brt = 0;
+        } else if (auto_off_flash_phase == BACKLIGHT_AUTO_OFF_FLASH_LIT) {
+            brt = MAX(state.brightness, CONFIG_ZMK_BACKLIGHT_BRT_STEP);
+        }
+    }
+#endif
     LOG_DBG("Update backlight brightness: %d%%", brt);
 
     for (int i = 0; i < BACKLIGHT_NUM_LEDS; i++) {
@@ -82,6 +102,37 @@ static int zmk_backlight_update() {
     return 0;
 }
 
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+static void backlight_auto_off_flash_work_handler(struct k_work *work) {
+    if (auto_off_flash_phase == BACKLIGHT_AUTO_OFF_FLASH_DARK) {
+        auto_off_flash_phase = BACKLIGHT_AUTO_OFF_FLASH_LIT;
+        zmk_backlight_update();
+        k_work_reschedule(&auto_off_flash_work, K_MSEC(100));
+    } else if (auto_off_flash_phase == BACKLIGHT_AUTO_OFF_FLASH_LIT) {
+        auto_off_flash_phase = BACKLIGHT_AUTO_OFF_FLASH_IDLE;
+        zmk_backlight_update();
+    }
+}
+
+static void backlight_auto_off_flash_start(void) {
+    if (suspended) {
+        return;
+    }
+
+    auto_off_flash_phase = BACKLIGHT_AUTO_OFF_FLASH_DARK;
+    zmk_backlight_update();
+    k_work_reschedule(&auto_off_flash_work, K_MSEC(60));
+}
+
+static void backlight_auto_off_flash_cancel(void) {
+    k_work_cancel_delayable(&auto_off_flash_work);
+    if (auto_off_flash_phase != BACKLIGHT_AUTO_OFF_FLASH_IDLE) {
+        auto_off_flash_phase = BACKLIGHT_AUTO_OFF_FLASH_IDLE;
+        zmk_backlight_update();
+    }
+}
+#endif
+
 #if IS_ENABLED(CONFIG_SETTINGS)
 static int backlight_settings_load_cb(const char *name, size_t len, settings_read_cb read_cb,
                                       void *cb_arg, void *param) {
@@ -94,14 +145,33 @@ static int backlight_settings_load_cb(const char *name, size_t len, settings_rea
         int rc = read_cb(cb_arg, &state, sizeof(state));
         return MIN(rc, 0);
     }
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+    if (settings_name_steq(name, "auto_off_idle", &next) && !next) {
+        if (len != sizeof(auto_off_idle_enabled)) {
+            return -EINVAL;
+        }
+
+        int rc = read_cb(cb_arg, &auto_off_idle_enabled, sizeof(auto_off_idle_enabled));
+        return MIN(rc, 0);
+    }
+#endif
     return -ENOENT;
 }
 
 static void backlight_save_work_handler(struct k_work *work) {
     settings_save_one("backlight/state", &state, sizeof(state));
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+    settings_save_one("backlight/auto_off_idle", &auto_off_idle_enabled,
+                      sizeof(auto_off_idle_enabled));
+#endif
 }
 
 static struct k_work_delayable backlight_save_work;
+
+static int backlight_schedule_save(void) {
+    int ret = k_work_reschedule(&backlight_save_work, K_MSEC(CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE));
+    return MIN(ret, 0);
+}
 #endif
 
 static int zmk_backlight_init(void) {
@@ -117,6 +187,9 @@ static int zmk_backlight_init(void) {
         LOG_ERR("Failed to load backlight settings: %d", rc);
     }
     k_work_init_delayable(&backlight_save_work, backlight_save_work_handler);
+#endif
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+    k_work_init_delayable(&auto_off_flash_work, backlight_auto_off_flash_work_handler);
 #endif
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
     state.on = zmk_usb_is_powered();
@@ -135,8 +208,7 @@ static int zmk_backlight_update_and_save() {
     }
 
 #if IS_ENABLED(CONFIG_SETTINGS)
-    int ret = k_work_reschedule(&backlight_save_work, K_MSEC(CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE));
-    return MIN(ret, 0);
+    return backlight_schedule_save();
 #else
     return 0;
 #endif
@@ -157,6 +229,9 @@ int zmk_backlight_toggle() { return state.on ? zmk_backlight_off() : zmk_backlig
 
 int zmk_backlight_suspend() {
     suspended = true;
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+    backlight_auto_off_flash_cancel();
+#endif
     return zmk_backlight_update();
 }
 
@@ -195,12 +270,28 @@ int zmk_backlight_toggle_auto_off_idle() {
     auto_off_idle_enabled = enable_auto_off;
 
     // Apply a changed setting immediately if the keyboard is already idle.
+    int rc = 0;
     if (!currently_active) {
-        return backlight_auto_state(&idle_prev_state, !enable_auto_off, &auto_off_idle);
+        rc = backlight_auto_state(&idle_prev_state, !enable_auto_off, &auto_off_idle);
+    } else {
+        backlight_update_trackpad_auto_off();
     }
 
-    backlight_update_trackpad_auto_off();
+    if (rc != 0) {
+        return rc;
+    }
+#if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
+    if (enable_auto_off) {
+        backlight_auto_off_flash_start();
+    } else {
+        backlight_auto_off_flash_cancel();
+    }
+#endif
+#if IS_ENABLED(CONFIG_SETTINGS)
+    return backlight_schedule_save();
+#else
     return 0;
+#endif
 #else
     return -ENOTSUP;
 #endif

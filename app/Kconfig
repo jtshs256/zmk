@@ -346,8 +346,8 @@ config ZMK_BACKLIGHT_AUTO_OFF_IDLE
     bool "Turn off backlight when keyboard goes into idle state"
 
 config ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE
-    bool "Allow toggling idle backlight auto-off at runtime"
-    depends on ZMK_BACKLIGHT_AUTO_OFF_IDLE
+    bool "Allow toggling and saving idle backlight auto-off at runtime"
+    depends on ZMK_BACKLIGHT_AUTO_OFF_IDLE && SETTINGS
     default n
 
 config ZMK_BACKLIGHT_AUTO_OFF_USB
