@@ -1,0 +1,5 @@
+description: uConsole Fn+Esc keyboard lock toggle behavior
+
+compatible: "zmk,behavior-uconsole-lock-toggle"
+
+include: zero_param.yaml

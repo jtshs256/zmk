@@ -1,5 +1,0 @@
-description: uConsole keyboard unlock behavior
-
-compatible: "zmk,behavior-uconsole-unlock"
-
-include: zero_param.yaml
