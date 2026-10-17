@@ -60,8 +60,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  *   3 = GAME
  *   4 = MOUSE
  *   5 = LOCK
- *   6 = UNLOCK
- *   7 = BOOT
+ *   6 = UNLOCK_LEFT
+ *   7 = UNLOCK_RIGHT
+ *   8 = BOOT
  */
 #define UCONSOLE_LOCK_LAYER 5
 

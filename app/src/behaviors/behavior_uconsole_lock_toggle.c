@@ -23,7 +23,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define UCONSOLE_SYM_LAYER 1
 #define UCONSOLE_UPPER_LAYER 2
 #define UCONSOLE_UNLOCK_LEFT_LAYER 6
-#define UCONSOLE_UNLOCK_RIGHT_LAYER 8
+#define UCONSOLE_UNLOCK_RIGHT_LAYER 7
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
@@ -34,8 +34,8 @@ static bool uconsole_fn_is_down(void) {
            zmk_keymap_layer_active(UCONSOLE_UNLOCK_RIGHT_LAYER);
 }
 
-static int on_uconsole_lock_toggle_pressed(struct zmk_behavior_binding *binding,
-                                           struct zmk_behavior_binding_event event) {
+static int on_lock_kb_pressed(struct zmk_behavior_binding *binding,
+                              struct zmk_behavior_binding_event event) {
     // This behavior is only bound to Fn-layer Esc positions and LOCK Esc.
     // Checking the momentary layer state prevents Esc alone from unlocking.
     if (!uconsole_fn_is_down()) {
@@ -90,23 +90,23 @@ static int on_uconsole_lock_toggle_pressed(struct zmk_behavior_binding *binding,
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
-static int on_uconsole_lock_toggle_released(struct zmk_behavior_binding *binding,
-                                            struct zmk_behavior_binding_event event) {
+static int on_lock_kb_released(struct zmk_behavior_binding *binding,
+                               struct zmk_behavior_binding_event event) {
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
-static const struct behavior_driver_api behavior_uconsole_lock_toggle_driver_api = {
-    .binding_pressed = on_uconsole_lock_toggle_pressed,
-    .binding_released = on_uconsole_lock_toggle_released,
+static const struct behavior_driver_api behavior_lock_kb_driver_api = {
+    .binding_pressed = on_lock_kb_pressed,
+    .binding_released = on_lock_kb_released,
 };
 
-static int behavior_uconsole_lock_toggle_init(const struct device *dev) { return 0; }
+static int behavior_lock_kb_init(const struct device *dev) { return 0; }
 
-#define UCONSOLE_LOCK_TOGGLE_INST(n)                                                               \
-    BEHAVIOR_DT_INST_DEFINE(n, behavior_uconsole_lock_toggle_init, NULL, NULL, NULL, POST_KERNEL,  \
+#define LOCK_KB_INST(n)                                                                            \
+    BEHAVIOR_DT_INST_DEFINE(n, behavior_lock_kb_init, NULL, NULL, NULL, POST_KERNEL,               \
                             CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,                                   \
-                            &behavior_uconsole_lock_toggle_driver_api);
+                            &behavior_lock_kb_driver_api);
 
-DT_INST_FOREACH_STATUS_OKAY(UCONSOLE_LOCK_TOGGLE_INST)
+DT_INST_FOREACH_STATUS_OKAY(LOCK_KB_INST)
 
 #endif
