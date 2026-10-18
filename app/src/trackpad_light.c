@@ -51,6 +51,7 @@ static bool light_suspended;
 static bool light_auto_off;
 static bool light_scrolling;
 static bool light_initialized;
+static bool light_backlight_flash_active;
 static uint8_t light_get_brightness(void);
 static void light_refresh(void);
 
@@ -219,7 +220,7 @@ static void light_refresh(void) {
         return;
     }
 
-    if (light_fade_active) {
+    if (light_fade_active || light_backlight_flash_active) {
         return;
     }
 
@@ -335,6 +336,42 @@ void zmk_trackpad_light_backlight_sync(void) {
 #endif
 }
 
+void zmk_trackpad_light_backlight_flash(bool flashing, uint8_t backlight_brightness) {
+    if (!flashing) {
+        if (light_backlight_flash_active) {
+            light_backlight_flash_active = false;
+            light_refresh();
+        }
+        return;
+    }
+
+    if (light_suspended || light_suspend_after_fade || !device_is_ready(light_dev)) {
+        return;
+    }
+
+    light_fade_cancel();
+    light_backlight_flash_active = true;
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    const uint8_t brightness = MIN(backlight_brightness, 100);
+#else
+    const uint8_t brightness = light_get_brightness();
+#endif
+    const uint8_t level = backlight_brightness == 0 || brightness == 0
+                              ? LEVEL_DARK
+                              : (IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT)
+                                     ? brightness
+                                     : 100 - brightness);
+    int rc = led_set_brightness(light_dev, 0, level);
+    if (rc != 0) {
+        LOG_ERR("Failed to flash the trackpad light: %d", rc);
+    } else {
+#if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+        light_last_output_brightness = brightness;
+        light_output_initialized = true;
+#endif
+    }
+}
+
 bool zmk_trackpad_light_enabled(void) {
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
     return zmk_backlight_is_on();
@@ -408,6 +445,7 @@ void zmk_trackpad_light_set_suspended(bool suspended) {
     }
 
     if (suspended) {
+        light_backlight_flash_active = false;
         light_fade_cancel();
     } else {
 #if !IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)

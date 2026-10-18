@@ -6,12 +6,13 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 int zmk_backlight_on();
 int zmk_backlight_off();
 int zmk_backlight_toggle();
-void zmk_backlight_flash(void);
+void zmk_backlight_flash(bool include_trackpad);
 int zmk_backlight_toggle_auto_off_idle();
 int zmk_backlight_suspend();
 /** Fade to dark over duration_ms, then suspend while preserving the backlight state. */

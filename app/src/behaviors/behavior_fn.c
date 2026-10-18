@@ -158,9 +158,7 @@ static int on_fn_lock_sym_pressed(struct zmk_behavior_binding *binding,
     sym_lock_key_consumed = true;
     LOG_INF("SYM Fn Lock %s", sym_fn_locked ? "enabled" : "disabled");
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT)
-    if (sym_fn_locked) {
-        zmk_backlight_flash();
-    }
+    zmk_backlight_flash(!sym_fn_locked);
 #endif
     return ZMK_BEHAVIOR_OPAQUE;
 }

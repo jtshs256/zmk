@@ -83,6 +83,7 @@ enum backlight_auto_off_flash_phase {
 };
 
 static enum backlight_auto_off_flash_phase auto_off_flash_phase;
+static bool auto_off_flash_trackpad;
 static struct k_work_delayable auto_off_flash_work;
 static void backlight_auto_off_flash_work_handler(struct k_work *work);
 
@@ -159,7 +160,16 @@ static int zmk_backlight_update() {
     }
     last_output_brightness = brt;
     backlight_output_initialized = true;
+#if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT)
+    bool flash_trackpad =
+        auto_off_flash_phase != BACKLIGHT_AUTO_OFF_FLASH_IDLE && auto_off_flash_trackpad;
+    zmk_trackpad_light_backlight_flash(flash_trackpad, brt);
 #if IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
+    if (!flash_trackpad) {
+        zmk_trackpad_light_backlight_sync();
+    }
+#endif
+#elif IS_ENABLED(CONFIG_ZMK_TRACKPAD_LIGHT_SYNC_BACKLIGHT)
     zmk_trackpad_light_backlight_sync();
 #endif
     return 0;
@@ -306,15 +316,17 @@ static void backlight_auto_off_flash_work_handler(struct k_work *work) {
         k_work_reschedule(&auto_off_flash_work, K_MSEC(100));
     } else if (auto_off_flash_phase == BACKLIGHT_AUTO_OFF_FLASH_LIT) {
         auto_off_flash_phase = BACKLIGHT_AUTO_OFF_FLASH_IDLE;
+        auto_off_flash_trackpad = false;
         zmk_backlight_update();
     }
 }
 
-static void backlight_auto_off_flash_start(void) {
+static void backlight_auto_off_flash_start(bool include_trackpad) {
     if (suspended) {
         return;
     }
 
+    auto_off_flash_trackpad = include_trackpad;
     auto_off_flash_phase = BACKLIGHT_AUTO_OFF_FLASH_DARK;
     zmk_backlight_update();
     k_work_reschedule(&auto_off_flash_work, K_MSEC(60));
@@ -324,6 +336,7 @@ static void backlight_auto_off_flash_cancel(void) {
     k_work_cancel_delayable(&auto_off_flash_work);
     if (auto_off_flash_phase != BACKLIGHT_AUTO_OFF_FLASH_IDLE) {
         auto_off_flash_phase = BACKLIGHT_AUTO_OFF_FLASH_IDLE;
+        auto_off_flash_trackpad = false;
         zmk_backlight_update();
     }
 }
@@ -456,7 +469,9 @@ int zmk_backlight_off() {
 
 int zmk_backlight_toggle() { return state.on ? zmk_backlight_off() : zmk_backlight_on(); }
 
-void zmk_backlight_flash(void) { backlight_auto_off_flash_start(); }
+void zmk_backlight_flash(bool include_trackpad) {
+    backlight_auto_off_flash_start(include_trackpad);
+}
 
 int zmk_backlight_suspend() {
     backlight_cancel_transients();
@@ -643,11 +658,7 @@ int zmk_backlight_toggle_auto_off_idle() {
         return rc;
     }
 #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE_TOGGLE)
-    if (enable_auto_off) {
-        backlight_auto_off_flash_start();
-    } else {
-        backlight_auto_off_flash_cancel();
-    }
+    backlight_auto_off_flash_start(!enable_auto_off);
 #endif
 #if IS_ENABLED(CONFIG_SETTINGS)
     return backlight_schedule_save();

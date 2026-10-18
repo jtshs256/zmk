@@ -46,6 +46,8 @@ void zmk_trackpad_light_set_suspended(bool suspended);
 void zmk_trackpad_light_set_suspended_fade(bool suspended, uint32_t duration_ms);
 /** Finish an active trackpad-light transition on user activity. */
 void zmk_trackpad_light_skip_fade_on_activity(void);
+/** Mirror backlight flash feedback on the trackpad light. */
+void zmk_trackpad_light_backlight_flash(bool flashing, uint8_t brightness);
 /** Holds the light off while keyboard backlight auto-off is active. */
 void zmk_trackpad_light_set_auto_off(bool auto_off, bool fade);
 #else
@@ -55,6 +57,10 @@ static inline void zmk_trackpad_light_set_suspended_fade(bool suspended, uint32_
     (void)duration_ms;
 }
 static inline void zmk_trackpad_light_skip_fade_on_activity(void) {}
+static inline void zmk_trackpad_light_backlight_flash(bool flashing, uint8_t brightness) {
+    (void)flashing;
+    (void)brightness;
+}
 static inline void zmk_trackpad_light_set_auto_off(bool auto_off, bool fade) {
     (void)auto_off;
     (void)fade;
