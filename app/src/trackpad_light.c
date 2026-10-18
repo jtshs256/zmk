@@ -356,11 +356,9 @@ void zmk_trackpad_light_backlight_flash(bool flashing, uint8_t backlight_brightn
 #else
     const uint8_t brightness = light_get_brightness();
 #endif
-    const uint8_t level = backlight_brightness == 0 || brightness == 0
-                              ? LEVEL_DARK
-                              : (IS_ENABLED(CONFIG_ZMK_TRACKPAD_SCROLL_LIGHT_INVERT)
-                                     ? brightness
-                                     : 100 - brightness);
+    const uint8_t logical_brightness =
+        backlight_brightness == 0 || brightness == 0 ? 0 : brightness;
+    const uint8_t level = light_level_from_brightness(logical_brightness);
     int rc = led_set_brightness(light_dev, 0, level);
     if (rc != 0) {
         LOG_ERR("Failed to flash the trackpad light: %d", rc);
